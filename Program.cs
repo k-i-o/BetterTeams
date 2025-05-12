@@ -5,6 +5,8 @@ using System.Text;
 using System.Text.Json;
 using TeamsInjector;
 using TeamsInjector.Configs;
+using System.Security.Principal;
+
 
 namespace MsTeamsInjector
 {
@@ -35,6 +37,8 @@ namespace MsTeamsInjector
         static async Task Main(string[] args)
         {
             Console.Clear();
+
+            Log.Info($"The application is in admin mode: {IsElevated()}");
 
             _config = LoadOrCreateConfig();
             TeamsPathHelper.DiscoverTeamsPathIfMissing(_config);
@@ -83,10 +87,17 @@ namespace MsTeamsInjector
                 }
             }
         }
+        public static bool IsElevated()
+        {
+            using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            WindowsPrincipal principal = new(identity);
+
+            return principal.IsInRole(WindowsBuiltInRole.Administrator);
+        }
 
         private static InjectorConfig LoadOrCreateConfig()
         {
-            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MsTeamsInjector");
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterMsTeams");
             string path = Path.Combine(dir, ConfigFileName);
             if (File.Exists(path))
             {
@@ -100,7 +111,7 @@ namespace MsTeamsInjector
 
         private static void SaveConfig()
         {
-            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MsTeamsInjector");
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterMsTeams");
             string path = Path.Combine(dir, ConfigFileName);
             string json = JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(path, json);
