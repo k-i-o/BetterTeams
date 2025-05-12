@@ -11,6 +11,8 @@ Object.assign(canvas.style, {
     zIndex: '-1'
 });
 
+document.querySelector(".f1x1ewgs>div[data-tid='slot-measurer']").style.backgroundColor = '#1f1f1f80';
+
 const ctx = canvas.getContext('2d');
 function resizeCanvas() {
     canvas.width = window.innerWidth;

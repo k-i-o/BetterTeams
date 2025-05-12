@@ -2,7 +2,6 @@
 
 
 
-
     let policy = null;
     if (window.trustedTypes) {
         try {

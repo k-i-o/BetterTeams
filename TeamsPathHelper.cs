@@ -39,6 +39,9 @@ namespace BetterTeams
             string windowsApps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps");
             try
             {
+                PrivilegeHelper.EnableTakeOwnership();
+                Log.Info("Privilege SeTakeOwnership enabled before scanning WindowsApps");
+
                 if (Directory.Exists(windowsApps))
                 {
                     string[] dirs = Directory.GetDirectories(windowsApps, "MSTeams_*", SearchOption.TopDirectoryOnly);
@@ -60,6 +63,7 @@ namespace BetterTeams
                 Log.Warning($"Cannot access WindowsApps folder: {ex.Message}");
             }
 
+
             try
             {
                 using (RegistryKey? key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Office\Teams"))
@@ -67,7 +71,7 @@ namespace BetterTeams
                     string? installPath = key?.GetValue("InstallPath") as string;
                     if (!string.IsNullOrEmpty(installPath))
                     {
-                        string exe = Path.Combine(installPath, "Teams.exe");
+                        string exe = Path.Combine(installPath, "ms-teams.exe");
                         if (File.Exists(exe))
                         {
                             config.TeamsExePath = exe;
@@ -83,9 +87,9 @@ namespace BetterTeams
                 Log.Warning($"Registry lookup failed: {ex.Message}");
             }
 
-            Log.Info("Enter full path to Teams.exe:");
-            string input = Console.ReadLine()?.Trim('"', ' ') ?? string.Empty;
-            if (File.Exists(input) && Path.GetFileName(input).Equals("Teams.exe", StringComparison.OrdinalIgnoreCase))
+            Log.Info("Enter full path to ms-teams.exe:");
+            string input = Console.ReadLine() ?? string.Empty;
+            if (File.Exists(input))
             {
                 config.TeamsExePath = input;
                 Log.Success($"Set Teams path from user input: {input}");
