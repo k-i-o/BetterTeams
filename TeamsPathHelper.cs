@@ -1,16 +1,13 @@
 ﻿using Microsoft.Win32;
-using MsTeamsInjector;
 using System.Diagnostics;
 using System.Text.Json;
-using TeamsInjector.Configs;
+using BetterTeams.Configs;
+using System.Security.AccessControl;
+using System.Security.Principal;
 
-namespace TeamsInjector
+namespace BetterTeams
 {
-    /// <summary>
-    /// Enhanced discovery of the Microsoft Teams executable path by scanning multiple likely locations,
-    /// including per-user installs, Program Files, WindowsApps, and registry entries.
-    /// Also ensures the Teams configuration.json is writable and enables the dev menu flag.
-    /// </summary>
+
     public static class TeamsPathHelper
     {
         private static readonly string[] WellKnownPaths = new[]
@@ -23,9 +20,11 @@ namespace TeamsInjector
         public static void DiscoverTeamsPathIfMissing(InjectorConfig config)
         {
             if (!string.IsNullOrEmpty(config.TeamsExePath) && File.Exists(config.TeamsExePath))
+            {
+                TryEnableDevMenu(config.TeamsExePath);
                 return;
+            }
 
-            // 1) Check well-known install locations
             //foreach (string candidate in WellKnownPaths)
             //{
             //    if (File.Exists(candidate))
@@ -37,7 +36,6 @@ namespace TeamsInjector
             //    }
             //}
 
-            // 2) Search in WindowsApps
             string windowsApps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps");
             try
             {
@@ -62,7 +60,6 @@ namespace TeamsInjector
                 Log.Warning($"Cannot access WindowsApps folder: {ex.Message}");
             }
 
-            // 3) Registry lookup
             try
             {
                 using (RegistryKey? key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Office\Teams"))
@@ -86,7 +83,6 @@ namespace TeamsInjector
                 Log.Warning($"Registry lookup failed: {ex.Message}");
             }
 
-            // 4) Fallback: prompt the user
             Log.Info("Enter full path to Teams.exe:");
             string input = Console.ReadLine()?.Trim('"', ' ') ?? string.Empty;
             if (File.Exists(input) && Path.GetFileName(input).Equals("Teams.exe", StringComparison.OrdinalIgnoreCase))
@@ -101,46 +97,72 @@ namespace TeamsInjector
             }
         }
 
-        private static void TryEnableDevMenu(string installFolder)
+        private static string? GetInstallFolder(string exePath)
         {
+            if (string.IsNullOrEmpty(exePath))
+                return null;
+
+            if (Directory.Exists(exePath))
+                return exePath;
+
+            if (File.Exists(exePath))
+                return Path.GetDirectoryName(exePath);
+
+            return null;
+        }
+
+        private static void TryEnableDevMenu(string exe)
+        {
+            string? installFolder = GetInstallFolder(exe);
+            if (string.IsNullOrEmpty(installFolder)) throw new Exception("Failed to get install folder");
+
+            string configJson = Path.Combine(installFolder, "configuration.json");
+            if (!File.Exists(configJson))
+            {
+                Log.Warning($"configuration.json not found at: {configJson}");
+                return;
+            }
+
             try
             {
-                // Locate configuration.json under the install folder
-                string configJson = Path.Combine(installFolder, "configuration.json");
-                if (!File.Exists(configJson))
-                {
-                    Log.Warning($"configuration.json not found at: {configJson}");
-                    return;
-                }
+                // 1) Enable take-ownership and security privileges
+                PrivilegeHelper.EnableTakeOwnership();
+                Log.Success("SeTakeOwnershipPrivilege enabled on token");
 
-                // Take ownership and grant full control
-                Process.Start(new ProcessStartInfo("takeown", $"/F \"{configJson}\"")
-                {
-                    UseShellExecute = false,
-                    Verb = "runas",
-                    CreateNoWindow = true
-                })?.WaitForExit();
+                // 2) Now use FileSecurity to set owner (Administrators) and grant yourself FullControl
+                var fileInfo = new FileInfo(configJson);
+                var security = fileInfo.GetAccessControl(AccessControlSections.All);
 
-                Process.Start(new ProcessStartInfo("icacls", $"\"{configJson}\" /grant %USERNAME%:F")
-                {
-                    UseShellExecute = false,
-                    Verb = "runas",
-                    CreateNoWindow = true
-                })?.WaitForExit();
+                var adminsSid = new SecurityIdentifier(
+                    WellKnownSidType.BuiltinAdministratorsSid, null);
+                security.SetOwner(adminsSid);
 
-                // Load, modify JSON
+                var currentUser = new NTAccount(
+                    Environment.UserDomainName + "\\" + Environment.UserName)
+                    .Translate(typeof(SecurityIdentifier)) as SecurityIdentifier;
+
+                var rule = new FileSystemAccessRule(
+                    currentUser!,
+                    FileSystemRights.FullControl,
+                    InheritanceFlags.None,
+                    PropagationFlags.None,
+                    AccessControlType.Allow);
+
+                security.AddAccessRule(rule);
+                fileInfo.SetAccessControl(security);
+
+                Log.Success("Ownership and permissions applied via FileSecurity API");
+
+                // 3) Modify JSON as before
                 string jsonText = File.ReadAllText(configJson);
-                using JsonDocument doc = JsonDocument.Parse(jsonText);
+                using var doc = JsonDocument.Parse(jsonText);
                 var root = doc.RootElement.Clone();
                 using var ms = new MemoryStream();
                 using (var writer = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true }))
                 {
                     writer.WriteStartObject();
-                    foreach (var property in root.EnumerateObject())
-                    {
-                        property.WriteTo(writer);
-                    }
-                    // Add devMenu flag if missing
+                    foreach (var prop in root.EnumerateObject())
+                        prop.WriteTo(writer);
                     if (!root.TryGetProperty("core/devMenuEnabled", out _))
                     {
                         writer.WriteBoolean("core/devMenuEnabled", true);
@@ -148,13 +170,15 @@ namespace TeamsInjector
                     }
                     writer.WriteEndObject();
                 }
-
                 File.WriteAllBytes(configJson, ms.ToArray());
             }
             catch (Exception ex)
             {
                 Log.Warning($"Failed to enable dev menu: {ex.Message}");
             }
+
+            Log.Success($"{exe} dev menu enabled. Restart Teams to apply changes.");
         }
+
     }
 }

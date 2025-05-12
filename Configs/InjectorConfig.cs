@@ -1,4 +1,4 @@
-﻿namespace TeamsInjector.Configs
+﻿namespace BetterTeams.Configs
 {
     public class InjectorConfig
     {

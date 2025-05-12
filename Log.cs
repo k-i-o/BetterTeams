@@ -1,4 +1,4 @@
-﻿namespace TeamsInjector
+﻿namespace BetterTeams
 {
     static class Log
     {

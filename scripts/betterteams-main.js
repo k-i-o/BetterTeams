@@ -1,7 +1,6 @@
 ﻿(function () {
 
-    const TENOR_API_KEY = ''; 
-    const TENOR_CLIENT_KEY = '';
+
 
 
     let policy = null;

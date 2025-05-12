@@ -3,8 +3,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using TeamsInjector;
-using TeamsInjector.Configs;
+using BetterTeams;
+using BetterTeams.Configs;
 using System.Security.Principal;
 
 
@@ -12,7 +12,7 @@ namespace MsTeamsInjector
 {
     class Program
     {
-        private const string ConfigFileName = "InjectorConfig.json";
+        private const string ConfigFileName = "BetterMsTeamsConfig.json";
 
         [DllImport("user32.dll")]
         private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
