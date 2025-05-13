@@ -12,18 +12,10 @@ Object.assign(canvas.style, {
     zIndex: '-1'
 });
 
-function setBackgroundColor() {
-    const mainElement = document.querySelector(".f1x1ewgs>div[data-tid='slot-measurer']");
-    if (mainElement) {
-        mainElement.style.backgroundColor = '#1f1f1f80';
-        console.log('Matrix theme: Background color applied');
-    } else {
-        console.log('Matrix theme: Main element not found yet, will retry later');
-        setTimeout(setBackgroundColor, 1000);
-    }
+const mainElement = document.querySelector("[data-tid='app-layout-area--main']>div[data-tid='slot-measurer']");
+if (mainElement) {
+    mainElement.style.backgroundColor = '#1f1f1f80';
 }
-
-setBackgroundColor();
 
 const ctx = canvas.getContext('2d');
 function resizeCanvas() {

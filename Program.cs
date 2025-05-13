@@ -190,7 +190,6 @@ namespace MsTeamsInjector
                 _config.ActiveThemeId = themeId;
                 SaveConfig();
                 
-                // Broadcast to all pages
                 await BroadcastToAllPages("theme_activated", new { ThemeId = themeId, ThemeName = theme.Name });
                 Log.Success($"Theme {theme.Name} activated");
             }
@@ -261,7 +260,7 @@ namespace MsTeamsInjector
             foreach (var theme in themes)
             {
                 string activeMarker = theme.Id == _config.ActiveThemeId ? " [ACTIVE]" : "";
-                Log.Info($"  {theme.Name} v{theme.Version}{activeMarker} - {theme.Description}");
+                Log.Info($"  [{theme.Id}]{theme.Name} v{theme.Version}{activeMarker} - {theme.Description}");
             }
         }
 
@@ -458,54 +457,50 @@ namespace MsTeamsInjector
             {
                 try
                 {
-                    await page.AddScriptTagAsync(new PageAddScriptTagOptions
+                    await page.EvaluateAsync(wsConnectorScript);
+
+                    await page.ExposeBindingAsync("BetterTeamsActionCallbackAsync", (BindingSource source, string actionJson) =>
                     {
-                        Content = wsConnectorScript
+                        try
+                        {
+                            var action = JsonSerializer.Deserialize<WebSocketMessage>(actionJson);
+                            if (action != null)
+                            {
+                                return HandlePageAction(page, action);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error($"Error processing page action: {ex.Message}");
+                        }
+                        return Task.CompletedTask;
                     });
-                    
-                    // Set up event listeners for custom events
-                    await page.AddScriptTagAsync(new PageAddScriptTagOptions
-                    {
-                        Content = @"
+
+                    await page.EvaluateAsync(@"
                             window.BetterTeamsActionHandler = (action, data) => {
                                 window.BetterTeamsActionCallbackAsync(JSON.stringify({
                                     Action: action,
                                     Data: data || {}
                                 }));
                             };
-                        "
-                    });
-                    
-                    // Set up a callback for when the bridge is ready
-                    await page.ExposeBindingAsync("notifyBridgeReadyAsync", (BindingSource source) => {
+                        ");
+
+                    await page.ExposeBindingAsync("notifyBridgeReadyAsync", (BindingSource source) =>
+                    {
                         Log.Success("BetterTeams bridge connected");
                         return Task.CompletedTask;
                     });
-                    
-                    await page.AddScriptTagAsync(new PageAddScriptTagOptions
-                    {
-                        Content = @"
+
+                    await page.EvaluateAsync(@"
                             window.notifyBridgeReady = () => {
                                 if (window.notifyBridgeReadyAsync) {
                                     window.notifyBridgeReadyAsync();
                                     console.log('BetterTeams bridge is ready');
                                 }
                             };
-                        "
-                    });
-                    
-                    await page.ExposeBindingAsync("BetterTeamsActionCallbackAsync", (BindingSource source, string actionJson) => {
-                        try {
-                            var action = JsonSerializer.Deserialize<WebSocketMessage>(actionJson);
-                            if (action != null)
-                            {
-                                return HandlePageAction(page, action);
-                            }
-                        } catch (Exception ex) {
-                            Log.Error($"Error processing page action: {ex.Message}");
-                        }
-                        return Task.CompletedTask;
-                    });
+                        ");
+
+
                 }
                 catch (Exception ex)
                 {
@@ -514,7 +509,7 @@ namespace MsTeamsInjector
                 }
             }
 
-            if(websocketServerInjected)
+            if (websocketServerInjected)
             {
                 Log.Success("WebSocket connector injected successfully");
             }
@@ -539,10 +534,7 @@ namespace MsTeamsInjector
                 string contentMain = File.ReadAllText(mainScriptFile);
                 try
                 {
-                    await page.AddScriptTagAsync(new PageAddScriptTagOptions
-                    {
-                        Content = contentMain
-                    });
+                    await page.EvaluateAsync(contentMain);
                 }
                 catch (Exception ex)
                 {
@@ -560,10 +552,7 @@ namespace MsTeamsInjector
                         string content = File.ReadAllText(scriptFile);
                         try
                         {
-                            await page.AddScriptTagAsync(new PageAddScriptTagOptions
-                            {
-                                Content = content
-                            });
+                            await page.EvaluateAsync(content);
                             if (iPage == 1)
                             {
                                 Log.Success($"Injected plugin: {plugin.Name}");
@@ -576,14 +565,10 @@ namespace MsTeamsInjector
                     }
                 }
                 
-                // Create theme manager script
                 string themeManagerScript = GenerateThemeManagerScript();
                 try
                 {
-                    await page.AddScriptTagAsync(new PageAddScriptTagOptions
-                    {
-                        Content = themeManagerScript
-                    });
+                    await page.EvaluateAsync(themeManagerScript);
                     if (iPage == 1)
                     {
                         Log.Success("Theme manager injected");
@@ -595,7 +580,6 @@ namespace MsTeamsInjector
                     themesInjected = false;
                 }
                 
-                // Load all themes but don't activate them yet
                 var themesDir = Path.Combine(root, "themes");
                 if (Directory.Exists(themesDir))
                 {
@@ -608,7 +592,6 @@ namespace MsTeamsInjector
                             string themeId = dirInfo.Name;
                             string content = File.ReadAllText(scriptFile);
                             
-                            // Wrap theme in a function that registers it with the theme manager
                             string wrappedScript = $@"
                             (function() {{
                                 // Register theme with theme manager
@@ -639,11 +622,9 @@ namespace MsTeamsInjector
                             
                             try
                             {
-                                await page.AddScriptTagAsync(new PageAddScriptTagOptions
-                                {
-                                    Content = wrappedScript
-                                });
-                                if(iPage == 1)
+                                await page.EvaluateAsync(wrappedScript);
+
+                                if (iPage == 1)
                                 {
                                     Log.Success($"Theme {themeId} registered");
                                 }
@@ -656,7 +637,6 @@ namespace MsTeamsInjector
                         }
                     }
                     
-                    // Activate the theme from config if one is set
                     if (!string.IsNullOrEmpty(_config.ActiveThemeId))
                     {
                         string activateThemeScript = $@"
@@ -668,10 +648,7 @@ namespace MsTeamsInjector
                         
                         try
                         {
-                            await page.AddScriptTagAsync(new PageAddScriptTagOptions
-                            {
-                                Content = activateThemeScript
-                            });
+                            await page.EvaluateAsync(activateThemeScript);
                             if (iPage == 1)
                             {
                                 Log.Success($"Activated theme: {_config.ActiveThemeId}");
@@ -761,7 +738,7 @@ namespace MsTeamsInjector
                     await DeactivateTheme();
                     break;
                 default:
-                    Log.Warning($"Unknown action: {message.Action}");
+                    Log.Warning($"Unknown action: {message.Action ?? "None"}");
                     break;
             }
         }
@@ -815,10 +792,8 @@ namespace MsTeamsInjector
                         document.dispatchEvent(event);
                     }})();
                 ";
-                await page.AddScriptTagAsync(new PageAddScriptTagOptions
-                {
-                    Content = script
-                });
+                await page.EvaluateAsync(script);
+
             }
             catch (Exception ex)
             {

@@ -1,11 +1,7 @@
-(function() {
-    // Example Plugin for BetterTeams
-    // This plugin adds a simple feature to Teams
-    
-    // Log when the plugin is loaded
+(function () {
+
     console.log('Example Plugin loaded successfully!');
     
-    // Add a custom CSS style
     function injectStyles() {
         const style = document.createElement('style');
         style.textContent = `
@@ -21,7 +17,6 @@
         document.head.appendChild(style);
     }
     
-    // Add a badge to team names in the sidebar
     function addBadgesToTeams() {
         const teamsList = document.querySelectorAll('[data-tid="team-list"] [data-tid="channel-list-team"]');
         teamsList.forEach(team => {
@@ -37,7 +32,6 @@
         });
     }
     
-    // Watch for changes in the DOM to add badges to newly added teams
     function observeTeamsList() {
         const observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
@@ -47,14 +41,11 @@
             }
         });
         
-        // Start observing the document body for DOM changes
         observer.observe(document.body, { childList: true, subtree: true });
         
-        // Initial call to add badges to existing teams
         addBadgesToTeams();
     }
     
-    // Call init functions
     injectStyles();
     observeTeamsList();
 })(); 
