@@ -1,9 +1,8 @@
-﻿using Microsoft.Win32;
-using System.Diagnostics;
-using System.Text.Json;
-using BetterTeams.Configs;
+﻿using BetterTeams.Configs;
+using Microsoft.Win32;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using System.Text.Json;
 
 namespace BetterTeams
 {

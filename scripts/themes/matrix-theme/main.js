@@ -1,4 +1,5 @@
 ﻿const canvas = document.createElement('canvas');
+canvas.setAttribute('data-betterteams-theme', 'matrix-theme');
 document.body.appendChild(canvas);
 
 Object.assign(canvas.style, {
@@ -11,7 +12,18 @@ Object.assign(canvas.style, {
     zIndex: '-1'
 });
 
-document.querySelector(".f1x1ewgs>div[data-tid='slot-measurer']").style.backgroundColor = '#1f1f1f80';
+function setBackgroundColor() {
+    const mainElement = document.querySelector(".f1x1ewgs>div[data-tid='slot-measurer']");
+    if (mainElement) {
+        mainElement.style.backgroundColor = '#1f1f1f80';
+        console.log('Matrix theme: Background color applied');
+    } else {
+        console.log('Matrix theme: Main element not found yet, will retry later');
+        setTimeout(setBackgroundColor, 1000);
+    }
+}
+
+setBackgroundColor();
 
 const ctx = canvas.getContext('2d');
 function resizeCanvas() {
@@ -50,3 +62,5 @@ function drawMatrix() {
 }
 
 drawMatrix();
+
+console.log('Matrix theme loaded successfully');

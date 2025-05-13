@@ -28,8 +28,5 @@
 <ItemGroup>
   <Content Include="betterteamslogo.ico" />
 </ItemGroup>
-<ItemGroup>
-  <Folder Include="scripts\plugins\" />
-</ItemGroup>
 
 </Project>

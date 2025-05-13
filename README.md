@@ -20,7 +20,7 @@ BetterTeams is a Microsoft Teams extension that adds advanced GIF management fea
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/BetterTeams.git
+git clone https://github.com/k-i-o/BetterTeams.git
 ```
 
 2. Configure API keys:
