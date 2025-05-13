@@ -1,68 +1,136 @@
-(function() {
-    console.log('Site Pet plugin loading...');
-    
-    // Function to load the site-pet script from GitHub
-    function loadSitePetScript() {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://derdere.github.io/site-pet/site-pet.js';
-            script.onload = () => {
-                console.log('Site Pet script loaded successfully');
-                resolve();
-            };
-            script.onerror = (error) => {
-                console.error('Failed to load Site Pet script:', error);
-                reject(error);
-            };
-            document.head.appendChild(script);
-        });
+function createSitePet(gfx) {
+    if (!gfx) {
+      gfx = 'sprite';
     }
-    
-    // Function to create and setup the pet
-    function setupPet() {
-        try {
-            // Make sure we don't add multiple pets
-            if (document.querySelector('[data-site-pet]')) {
-                return;
+  
+    const ANI = {
+      IDEL1: 0,
+      IDEL2: 1,
+      IDEL3: 2,
+      RIGHT: 3,
+      DOWN: 4,
+      LEFT: 5,
+      UP: 6,
+      PET: 7,
+      SLEEP: 8
+    };
+  
+    let ele = document.createElement("div");
+  
+    ele.style.position = 'fixed';
+    ele.style.width = '64px';
+    ele.style.height = '64px';
+    //ele.style.backgroundColor = '#f0f';
+    ele.style.backgroundImage = `url(https://derdere.github.io/site-pet/gfx/${gfx}.png)`;
+    ele.style.backgroundRepeat = 'no-repeat';
+    ele.style.backgroundPosition = '0px 0px';
+  
+    document.body.appendChild(ele);
+  
+    const MaxFrame = 8;
+    let anim = 0;
+    let frame = 0;
+    let sleep = 0;
+    let x = -64;
+    let moving = false;
+    let y = Math.floor(Math.floor(window.innerHeight / 64) / 2) * 64;
+  
+    ele.style.top = `${y}px`;
+    ele.style.left = `${x}px`;
+    ele.style.transition = 'top 1500ms linear, left 1500ms linear';
+  
+    let setAnim = (a) => {
+      frame = 0;
+      anim = a;
+    };
+  
+    let update = () => {
+      let bgX = -64 * frame;
+      let bgY = -64 * anim;
+      let pos = `${bgX}px ${bgY}px `;
+      ele.style.backgroundPosition = pos;
+      frame += 1;
+      if (frame >= MaxFrame) {
+        if (sleep > 0) {
+          sleep -= 1;
+          moving = false;
+          setAnim(ANI.SLEEP);
+        } else {
+          if (((Math.round(Math.random() * 100000) % 2) == 0) && (x >= 0)) {
+            let a = (Math.round(Math.random() * 100000) % 5) - 2;
+            if (a < 0) a = 0;
+            moving = false;
+            setAnim(a);
+  
+          } else if (((Math.round(Math.random() * 100000) % 8) != 0) || (x < 0)) {
+            let d = Math.round(Math.random() * 100000) % 4;
+            let sx = 0;
+            let sy = 0;
+            let a = null;
+            if (d == 3) {
+              // up
+              a = ANI.UP;
+              sy = -64;
+            } else if (d == 2) {
+              // down
+              a = ANI.DOWN;
+              sy = 64;
+            } else if (d == 1) {
+              // left
+              a = ANI.LEFT;
+              sx = -64;
+            } else {
+              // right
+              a = ANI.RIGHT;
+              sx = 64;
             }
-            
-            // Detect which sprite to use from available options
-            const availableSprites = ['example']; // Default from the repository
-            const selectedSprite = availableSprites[Math.floor(Math.random() * availableSprites.length)];
-            
-            // Create the pet
-            const pet = window.createSitePet(selectedSprite);
-            pet.setAttribute('data-site-pet', 'true');
-            
-            console.log(`Site Pet created with sprite: ${selectedSprite}`);
-        } catch (error) {
-            console.error('Error setting up Site Pet:', error);
+            if (x <= 0) {
+              sx = 64;
+              sy = 0;
+              a = ANI.RIGHT;
+            } else if (x >= (window.innerWidth - 64)) {
+              sx = -64;
+              sy = 0;
+              a = ANI.LEFT;
+            } else if (y <= 0) {
+              sy = 64;
+              sx = 0;
+              a = ANI.DOWN;
+            } else if (y >= (window.innerHeight - 64)) {
+              sy = -64;
+              sx = 0;
+              a = ANI.UP;
+            }
+            x += sx;
+            y += sy;
+            moving = true;
+            ele.style.top = `${y}px`;
+            ele.style.left = `${x}px`;
+            setAnim(a);
+  
+          } else {
+            sleep = 5;
+            moving = false;
+            setAnim(ANI.SLEEP);
+          }
         }
-    }
-    
-    // Initialize the plugin
-    async function initialize() {
-        try {
-            await loadSitePetScript();
-            
-            // Wait a short time for the page to fully load
-            setTimeout(() => {
-                setupPet();
-            }, 2000);
-            
-            // Watch for navigation changes to recreate pet if needed
-            const observer = new MutationObserver((mutations) => {
-                if (!document.querySelector('[data-site-pet]')) {
-                    setupPet();
-                }
-            });
-            
-            observer.observe(document.body, { childList: true, subtree: true });
-            
-        } catch (error) {
-            console.error('Failed to initialize Site Pet plugin:', error);
-        }
-    }
-    
-    initialize();
-})(); 
+      }
+      if ((!moving) && (sleep <= 0) && (anim != ANI.PET)) {
+        ele.style.cursor = 'pointer';
+      } else {
+        ele.style.cursor = 'default';
+      }
+    };
+    setInterval(update, 150);
+  
+    let click = () => {
+      if ((!moving) && (sleep <= 0) && (anim != ANI.PET)) {
+        setAnim(ANI.PET);
+      }
+    };
+    ele.addEventListener('click', click);
+  
+    return ele;
+}
+
+createSitePet('example');

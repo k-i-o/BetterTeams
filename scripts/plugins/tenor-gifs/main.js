@@ -1,5 +1,6 @@
 (function () {
 
+
     async function searchGifs(searchTerm = 'funny', limit = 20) {
         try {
             const response = await fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&client_key=${TENOR_CLIENT_KEY}&limit=${limit}`);
