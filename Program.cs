@@ -1,23 +1,11 @@
-﻿using Microsoft.Playwright;
+﻿using BetterTeams;
+using BetterTeams.Configs;
+using Microsoft.Playwright;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
-using BetterTeams;
-using BetterTeams.Configs;
-using System.Security.Principal;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Net.WebSockets;
-using System.Security.AccessControl;
-using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Playwright.Core;
 
 namespace MsTeamsInjector
 {
@@ -50,10 +38,6 @@ namespace MsTeamsInjector
         {
             Console.Clear();
 
-#if DEBUG
-            Console.ReadLine();
-#endif
-
             Log.Info($"The application is in admin mode: {IsElevated()}");
 
             _config = LoadOrCreateConfig();
@@ -79,9 +63,10 @@ namespace MsTeamsInjector
                     case "help":
                         Console.WriteLine("Available commands:");
                         Console.WriteLine("  help - Show this help message");
-                        Console.WriteLine("  kill - Kill the Teams process");
-                        Console.WriteLine("  launch - Launch Teams with remote debugging");
+                        //Console.WriteLine("  kill - Kill the Teams process");
+                        //Console.WriteLine("  launch - Launch Teams with remote debugging");
                         Console.WriteLine("  reinject - Reinject scripts into all pages");
+                        Console.WriteLine("  restart - Restart teams reinjecting all");
                         Console.WriteLine("  plugins - List installed plugins");
                         Console.WriteLine("  themes - List installed themes");
                         Console.WriteLine("  install_plugin <id> - Install a plugin");
@@ -95,6 +80,13 @@ namespace MsTeamsInjector
                     case "reinject":
                         Log.Info("Reinjecting scripts...");
                         await Task.Delay(_config.ReInjectDelayMs);
+                        await InjectScriptsIntoAllPages();
+                        break;
+                    case "restart":
+                        Log.Info("Restarting Teams and reinjecting scripts...");
+                        KillTeamsProcess();
+                        LaunchTeams();
+                        await Task.Delay(_config.InitialDelayMs);
                         await InjectScriptsIntoAllPages();
                         break;
                     case "kill":
@@ -259,8 +251,8 @@ namespace MsTeamsInjector
             Log.Info("Installed themes:");
             foreach (var theme in themes)
             {
-                string activeMarker = theme.Id == _config.ActiveThemeId ? " [ACTIVE]" : "";
-                Log.Info($"  [{theme.Id}]{theme.Name} v{theme.Version}{activeMarker} - {theme.Description}");
+                string activeMarker = theme.Id == _config.ActiveThemeId ? " ~ACTIVE~" : "";
+                Log.Info($"  {activeMarker} [{theme.Id}] {theme.Name} v{theme.Version} - {theme.Description}");
             }
         }
 

@@ -1,0 +1,9 @@
+{
+  "id": "snow-particles",
+  "name": "Snow Particles",
+  "description": "A winter-themed effect with gentle snowflakes falling in the background",
+  "version": "1.0.0",
+  "author": "BetterTeams",
+  "repository": "https://github.com/kiocode/BetterTeams",
+  "main": "snow-particles.js"
+} 

@@ -1,9 +1,9 @@
 ﻿(function () {
 
-    let policy = null;
+    window.policy = null;
     if (window.trustedTypes) {
         try {
-            policy = trustedTypes.createPolicy(
+            window.policy = trustedTypes.createPolicy(
                 '@msteams/frameworks-loader#dompurify',
                 { 
                     createHTML: (input) => input,
@@ -15,10 +15,10 @@
         }
     }
     
-    function injectHtmlWithPolicy(html, eventListenerType = 'click', eventListener = null) {
+    window.injectHtmlWithPolicy = (html, eventListenerType = 'click', eventListener = null) => {
         const tempDiv = document.createElement('div');
-        if (policy) {
-            tempDiv.innerHTML = policy.createHTML(html);
+        if (window.policy) {
+            tempDiv.innerHTML = window.policy.createHTML(html);
         } else {
             tempDiv.innerHTML = html;
         }

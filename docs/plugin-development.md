@@ -20,7 +20,7 @@ The `manifest.json` contains the plugin metadata and has the following structure
 
 ```json
 {
-  "schema_version": "1.0",
+  "id": "unique-folder-name",
   "name": "Plugin Name",                 // Plugin name
   "description": "Plugin description",   // Plugin description
   "version": "1.0.0",                   // Version in semver format
@@ -29,9 +29,6 @@ The `manifest.json` contains the plugin metadata and has the following structure
   "main": "main.js"                    // Main plugin file
 }
 ```
-
-Note: The system will automatically generate a unique ID for your plugin, so you don't need to specify it in the manifest file.
-
 ### main.js File
 
 The `main.js` file is the entry point of the plugin. We recommend wrapping the code in an IIFE (Immediately Invoked Function Expression) to avoid conflicts with the global scope:

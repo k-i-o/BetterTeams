@@ -1,12 +1,9 @@
-using System;
-using System.Collections.Generic;
+using BetterTeams.Configs;
 using System.Net;
 using System.Net.WebSockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
-using BetterTeams.Configs;
 
 namespace BetterTeams
 {
@@ -18,6 +15,30 @@ namespace BetterTeams
 
     public class WebSocketServer
     {
+        // Windows API for clipboard operations
+        [DllImport("user32.dll")]
+        static extern bool OpenClipboard(IntPtr hWndNewOwner);
+        
+        [DllImport("user32.dll")]
+        static extern bool EmptyClipboard();
+        
+        [DllImport("user32.dll")]
+        static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+        
+        [DllImport("user32.dll")]
+        static extern bool CloseClipboard();
+        
+        [DllImport("gdi32.dll")]
+        static extern IntPtr CopyEnhMetaFile(IntPtr hemfSrc, IntPtr hNULL);
+        
+        [DllImport("gdi32.dll")]
+        static extern bool DeleteEnhMetaFile(IntPtr hemf);
+        
+        // Clipboard format constants
+        const uint CF_BITMAP = 2;
+        const uint CF_DIB = 8;
+        const uint CF_ENHMETAFILE = 14;
+        
         private HttpListener _listener;
         private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
         private readonly List<WebSocket> _clients = new List<WebSocket>();
@@ -107,7 +128,7 @@ namespace BetterTeams
             while (!receiveResult.CloseStatus.HasValue)
             {
                 string receivedMessage = Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
-                await ProcessMessage(webSocket, receivedMessage);
+                await HandleWebSocketMessage(receivedMessage, webSocket);
 
                 Array.Clear(buffer, 0, buffer.Length);
                 receiveResult = await webSocket.ReceiveAsync(
@@ -120,81 +141,88 @@ namespace BetterTeams
                 _cancellationTokenSource.Token);
         }
 
-        private async Task ProcessMessage(WebSocket webSocket, string message)
+        private async Task HandleWebSocketMessage(string message, WebSocket socket)
         {
             try
             {
-                var msg = JsonSerializer.Deserialize<WebSocketMessage>(message);
-                if (msg == null)
-                {
-                    Log.Error("Received null message");
-                    return;
-                }
+                var jsonDocument = JsonDocument.Parse(message);
+                var root = jsonDocument.RootElement;
 
-                Log.Info($"Received action: {msg.Action}");
-
-                switch (msg.Action)
+                if (root.TryGetProperty("action", out var actionElement))
                 {
-                    case "get_plugins":
-                        await SendAvailablePlugins(webSocket);
-                        break;
-                    case "get_themes":
-                        await SendAvailableThemes(webSocket);
-                        break;
-                    case "install_plugin":
-                        if (msg.Data.ContainsKey("id") && msg.Data["id"] is string pluginId)
-                        {
-                            bool success = await _pluginManager.InstallPlugin(pluginId);
-                            await SendResponse(webSocket, "plugin_installed", new { Success = success, Id = pluginId });
-                        }
-                        break;
-                    case "install_theme":
-                        if (msg.Data.ContainsKey("id") && msg.Data["id"] is string themeId)
-                        {
-                            bool success = await _pluginManager.InstallTheme(themeId);
-                            await SendResponse(webSocket, "theme_installed", new { Success = success, Id = themeId });
-                        }
-                        break;
-                    case "uninstall_plugin":
-                        if (msg.Data.ContainsKey("id") && msg.Data["id"] is string pluginToUninstall)
-                        {
-                            bool success = _pluginManager.UninstallPlugin(pluginToUninstall);
-                            await SendResponse(webSocket, "plugin_uninstalled", new { Success = success, Id = pluginToUninstall });
-                        }
-                        break;
-                    case "uninstall_theme":
-                        if (msg.Data.ContainsKey("id") && msg.Data["id"] is string themeToUninstall)
-                        {
-                            bool success = _pluginManager.UninstallTheme(themeToUninstall);
-                            await SendResponse(webSocket, "theme_uninstalled", new { Success = success, Id = themeToUninstall });
-                        }
-                        break;
-                    case "get_installed_plugins":
-                        await SendInstalledPlugins(webSocket);
-                        break;
-                    case "get_installed_themes":
-                        await SendInstalledThemes(webSocket);
-                        break;
-                    case "activate_theme":
-                        if (msg.Data.ContainsKey("id") && msg.Data["id"] is string themeToActivate)
-                        {
-                            await ActivateTheme(webSocket, themeToActivate);
-                        }
-                        break;
-                    case "deactivate_theme":
-                        await DeactivateTheme(webSocket);
-                        break;
-                    case "get_active_theme":
-                        await SendActiveTheme(webSocket);
-                        break;
-                    default:
-                        Log.Warning($"Unknown action: {msg.Action}");
-                        break;
+                    string action = actionElement.GetString() ?? string.Empty;
+                    
+                    switch (action)
+                    {
+                        case "get_plugins":
+                            await SendAvailablePlugins(socket);
+                            break;
+                        case "get_themes":
+                            await SendAvailableThemes(socket);
+                            break;
+                        case "install_plugin":
+                            if (root.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String)
+                            {
+                                string pluginId = idElement.GetString() ?? string.Empty;
+                                bool success = await _pluginManager.InstallPlugin(pluginId);
+                                await SendResponse(socket, "plugin_installed", new { Success = success, Id = pluginId });
+                            }
+                            break;
+                        case "install_theme":
+                            if (root.TryGetProperty("id", out var themeIdElement) && themeIdElement.ValueKind == JsonValueKind.String)
+                            {
+                                string themeId = themeIdElement.GetString() ?? string.Empty;
+                                bool success = await _pluginManager.InstallTheme(themeId);
+                                await SendResponse(socket, "theme_installed", new { Success = success, Id = themeId });
+                            }
+                            break;
+                        case "uninstall_plugin":
+                            if (root.TryGetProperty("id", out var pluginToUninstallElement) && pluginToUninstallElement.ValueKind == JsonValueKind.String)
+                            {
+                                string pluginToUninstall = pluginToUninstallElement.GetString() ?? string.Empty;
+                                bool success = _pluginManager.UninstallPlugin(pluginToUninstall);
+                                await SendResponse(socket, "plugin_uninstalled", new { Success = success, Id = pluginToUninstall });
+                            }
+                            break;
+                        case "uninstall_theme":
+                            if (root.TryGetProperty("id", out var themeToUninstallElement) && themeToUninstallElement.ValueKind == JsonValueKind.String)
+                            {
+                                string themeToUninstall = themeToUninstallElement.GetString() ?? string.Empty;
+                                bool success = _pluginManager.UninstallTheme(themeToUninstall);
+                                await SendResponse(socket, "theme_uninstalled", new { Success = success, Id = themeToUninstall });
+                            }
+                            break;
+                        case "get_installed_plugins":
+                            await SendInstalledPlugins(socket);
+                            break;
+                        case "get_installed_themes":
+                            await SendInstalledThemes(socket);
+                            break;
+                        case "activate_theme":
+                            if (root.TryGetProperty("id", out var themeToActivateElement) && themeToActivateElement.ValueKind == JsonValueKind.String)
+                            {
+                                string themeToActivate = themeToActivateElement.GetString() ?? string.Empty;
+                                await ActivateTheme(socket, themeToActivate);
+                            }
+                            break;
+                        case "deactivate_theme":
+                            await DeactivateTheme(socket);
+                            break;
+                        case "get_active_theme":
+                            await SendActiveTheme(socket);
+                            break;
+                        case "copyToClipboard":
+                            await HandleCopyToClipboard(root);
+                            break;
+                        default:
+                            Log.Warning($"Unknown action: {action}");
+                            break;
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Log.Error($"Error processing message: {ex.Message}");
+                Log.Error($"Error handling WebSocket message: {ex.Message}");
             }
         }
 
@@ -390,6 +418,100 @@ namespace BetterTeams
             _cancellationTokenSource.Cancel();
             _listener?.Stop();
             Log.Info("WebSocket server stopped");
+        }
+
+        private async Task HandleCopyToClipboard(JsonElement data)
+        {
+            try
+            {
+                if (data.TryGetProperty("type", out var typeElement) && 
+                    data.TryGetProperty("url", out var urlElement))
+                {
+                    string type = typeElement.GetString() ?? string.Empty;
+                    string url = urlElement.GetString() ?? string.Empty;
+                    
+                    if (type == "gif" && !string.IsNullOrEmpty(url))
+                    {
+                        Log.Info($"Copying GIF from URL to clipboard: {url}");
+                        
+                        // Download the GIF
+                        using (HttpClient client = new HttpClient())
+                        {
+                            var response = await client.GetAsync(url);
+                            if (response.IsSuccessStatusCode)
+                            {
+                                var imageBytes = await response.Content.ReadAsByteArrayAsync();
+                                
+                                // Save to temporary file and copy to clipboard
+                                string tempFilePath = Path.Combine(Path.GetTempPath(), $"betterteams_gif_{Guid.NewGuid()}.gif");
+                                try
+                                {
+                                    // Save the GIF to a temporary file
+                                    File.WriteAllBytes(tempFilePath, imageBytes);
+                                    Log.Info($"GIF saved to temporary file: {tempFilePath}");
+                                    
+                                    // Use PowerShell to copy the image to clipboard
+                                    string psCommand = $"Add-Type -AssemblyName System.Windows.Forms; " +
+                                                      $"[System.Windows.Forms.Clipboard]::SetImage([System.Drawing.Image]::FromFile('{tempFilePath}'))";
+                                    
+                                    using (var process = new System.Diagnostics.Process())
+                                    {
+                                        process.StartInfo.FileName = "powershell.exe";
+                                        process.StartInfo.Arguments = $"-Command \"{psCommand}\"";
+                                        process.StartInfo.UseShellExecute = false;
+                                        process.StartInfo.CreateNoWindow = true;
+                                        process.StartInfo.RedirectStandardOutput = true;
+                                        process.StartInfo.RedirectStandardError = true;
+                                        
+                                        process.Start();
+                                        process.WaitForExit();
+                                        
+                                        if (process.ExitCode == 0)
+                                        {
+                                            Log.Success("GIF copied to clipboard successfully");
+                                        }
+                                        else
+                                        {
+                                            string error = process.StandardError.ReadToEnd();
+                                            Log.Error($"Failed to copy GIF to clipboard: {error}");
+                                        }
+                                    }
+                                    
+                                    // Broadcast success message to clients
+                                    await BroadcastMessage("clipboard_updated", new { Success = true, Message = "GIF copied to clipboard" });
+                                }
+                                catch (Exception ex)
+                                {
+                                    Log.Error($"Error copying GIF to clipboard: {ex.Message}");
+                                }
+                                finally
+                                {
+                                    // Clean up the temporary file
+                                    try
+                                    {
+                                        if (File.Exists(tempFilePath))
+                                        {
+                                            File.Delete(tempFilePath);
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Log.Warning($"Failed to delete temporary file: {ex.Message}");
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                Log.Error($"Failed to download GIF: {response.StatusCode}");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error handling copy to clipboard: {ex.Message}");
+            }
         }
     }
 } 

@@ -1,0 +1,9 @@
+{
+  "id": "rain",
+  "name": "Rain",
+  "description": "A calming rain effect with droplets falling in the background",
+  "version": "1.0.0",
+  "author": "BetterTeams",
+  "repository": "https://github.com/kiocode/BetterTeams",
+  "main": "rain.js"
+} 

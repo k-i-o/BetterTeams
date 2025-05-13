@@ -18,10 +18,10 @@
     }
     
     function addBadgesToTeams() {
-        const teamsList = document.querySelectorAll('[data-tid="team-list"] [data-tid="channel-list-team"]');
+        const teamsList = document.querySelectorAll('.virtual-tree-list-scroll-container');
         teamsList.forEach(team => {
             if (!team.querySelector('.example-plugin-badge')) {
-                const teamName = team.querySelector('[data-tid="title-text"]');
+                const teamName = team.querySelector('[data-tid="chat-list-item-title"]');
                 if (teamName) {
                     const badge = document.createElement('span');
                     badge.className = 'example-plugin-badge';
