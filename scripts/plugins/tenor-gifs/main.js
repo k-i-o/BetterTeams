@@ -1,6 +1,7 @@
 (function () {
 
 
+
     async function searchGifs(searchTerm = 'funny', limit = 20) {
         try {
             const response = await fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&client_key=${TENOR_CLIENT_KEY}&limit=${limit}`);
@@ -14,21 +15,17 @@
 
     async function copyGifToClipboard(gifUrl) {
         try {
-            // Try to use WebSocket to communicate with the C# backend
             if (window.betterTeams && window.betterTeams.sendWebSocketMessage) {
-                // Send the GIF URL to the C# backend via WebSocket
                 window.betterTeams.sendWebSocketMessage({
                     action: "copyToClipboard",
                     type: "gif",
                     url: gifUrl
                 });
                 
-                // Show a temporary notification
                 showNotification("GIF copied to clipboard. You can now paste it in the chat.");
                 return true;
             }
             
-            // Fallback to standard clipboard API if WebSocket is not available
             try {
                 const response = await fetch(gifUrl);
                 const blob = await response.blob();
@@ -40,7 +37,6 @@
                 console.warn('Standard clipboard API failed:', clipboardError);
             }
             
-            // Show a notification with safe download option
             showNotification("Unable to copy GIF to clipboard. Please try pasting manually.", 10000);
             return false;
         } catch (e) {
@@ -50,13 +46,11 @@
     }
     
     function showNotification(message, duration = 3000) {
-        // Remove any existing notifications
         const existingNotification = document.querySelector('#betterteams-notification');
         if (existingNotification) {
             document.body.removeChild(existingNotification);
         }
         
-        // Create notification element
         const notificationDiv = document.createElement('div');
         notificationDiv.id = 'betterteams-notification';
         notificationDiv.style.cssText = `
@@ -76,7 +70,6 @@
         notificationDiv.textContent = message;
         document.body.appendChild(notificationDiv);
         
-        // Remove notification after specified duration
         setTimeout(() => {
             if (document.body.contains(notificationDiv)) {
                 document.body.removeChild(notificationDiv);
@@ -99,7 +92,7 @@
 
         let gifs = [];
         if(!searchText || searchText.length == 0) {
-            gifs = await searchGifs('funny');
+            gifs = await searchGifs();
         } else {
             gifs = await searchGifs(searchText);
         }

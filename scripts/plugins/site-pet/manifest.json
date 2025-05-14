@@ -3,7 +3,7 @@
     "name": "Site Pet",
     "description": "Adds a small animated pet that roams around your Teams client",
     "version": "1.0.0",
-    "author": "Integration by BetterTeams, Original by derDere",
+    "author": "BetterTeams",
     "repository": "https://github.com/derDere/site-pet",
     "main": "main.js"
 } 

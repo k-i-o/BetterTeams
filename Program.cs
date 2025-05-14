@@ -431,252 +431,235 @@ namespace MsTeamsInjector
             }
         }
 
+        static int iPages = 0;
         private static async Task InjectScriptsIntoAllPages()
         {
-            bool websocketServerInjected = true;
-            bool mainScriptInjected = true;
-            bool themesInjected = true;
-
             IPlaywright playwright = await Playwright.CreateAsync();
-            string url = "http://127.0.0.1:" + _config.RemoteDebuggingPort;
-            IBrowser browser = await playwright.Chromium.ConnectOverCDPAsync(url);
-            IBrowserContext context = browser.Contexts.FirstOrDefault() ?? await browser.NewContextAsync();
+            string cdpUrl = $"http://127.0.0.1:{_config.RemoteDebuggingPort}";
+            IBrowser browser = await playwright.Chromium.ConnectOverCDPAsync(cdpUrl);
+            IBrowserContext context = browser.Contexts.FirstOrDefault()
+                                      ?? await browser.NewContextAsync();
 
+            // Ensure any future pages also get our scripts
+            context.Page += (_, newPage) => InjectIntoPageAsync(newPage);
+
+            // Inject into already-open pages
+            var pagesSnapshot = context.Pages.ToList();
+            var injectTasks = pagesSnapshot.Select(InjectIntoPageAsync);
+            await Task.WhenAll(injectTasks);
+
+            Log.Success("WebSocket connector & bindings injected into all pages.");
+
+            // Now load main script + plugins + themes on each page
             string root = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _config.ScriptsDirectory);
+            string mainScript = Path.Combine(root, "betterteams-main.js");
+            var installedPlugins = _pluginManager.GetInstalledPlugins();
 
-            string wsConnectorScript = GenerateWebSocketConnectorScript(_config.WebSocketPort);
-            foreach (IPage page in context.Pages)
+            foreach (var page in pagesSnapshot)
             {
-                try
-                {
-                    await page.EvaluateAsync(wsConnectorScript);
-
-                    await page.ExposeBindingAsync("BetterTeamsActionCallbackAsync", (BindingSource source, string actionJson) =>
-                    {
-                        try
-                        {
-                            var action = JsonSerializer.Deserialize<WebSocketMessage>(actionJson);
-                            if (action != null)
-                            {
-                                return HandlePageAction(page, action);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error($"Error processing page action: {ex.Message}");
-                        }
-                        return Task.CompletedTask;
-                    });
-
-                    await page.EvaluateAsync(@"
-                            window.BetterTeamsActionHandler = (action, data) => {
-                                window.BetterTeamsActionCallbackAsync(JSON.stringify({
-                                    Action: action,
-                                    Data: data || {}
-                                }));
-                            };
-                        ");
-
-                    await page.ExposeBindingAsync("notifyBridgeReadyAsync", (BindingSource source) =>
-                    {
-                        Log.Success("BetterTeams bridge connected");
-                        return Task.CompletedTask;
-                    });
-
-                    await page.EvaluateAsync(@"
-                            window.notifyBridgeReady = () => {
-                                if (window.notifyBridgeReadyAsync) {
-                                    window.notifyBridgeReadyAsync();
-                                    console.log('BetterTeams bridge is ready');
-                                }
-                            };
-                        ");
-
-
-                }
-                catch (Exception ex)
-                {
-                    Log.Error($"Error injecting WebSocket connector: {ex.Message}");
-                    websocketServerInjected = false;
-                }
-            }
-
-            if (websocketServerInjected)
-            {
-                Log.Success("WebSocket connector injected successfully");
-            }
-            else
-            {
-                Log.Error("Failed to inject WebSocket connector");
-                return;
-            }
-
-            string mainScriptFile = Path.Combine(root, "betterteams-main.js");
-            if (!File.Exists(mainScriptFile))
-            {
-                Log.Error($"Script file not found: {mainScriptFile}");
-                return;
-            }
-
-            int iPage = 0;
-            List<PluginInfo> installedPlugins = _pluginManager.GetInstalledPlugins();
-            foreach (IPage page in context.Pages)
-            {
-                iPage++;
-                string contentMain = File.ReadAllText(mainScriptFile);
-                try
-                {
-                    await page.EvaluateAsync(contentMain);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error($"Error injecting main script: {ex.Message}");
-                    mainScriptInjected = false;
-                }
-
-                foreach (var plugin in installedPlugins)
-                {
-                    string pluginDir = Path.Combine(root, "plugins", plugin.Id);
-                    string scriptFile = Path.Combine(pluginDir, "main.js");
-                    
-                    if (File.Exists(scriptFile))
-                    {
-                        string content = File.ReadAllText(scriptFile);
-                        try
-                        {
-                            await page.EvaluateAsync(content);
-                            if (iPage == 1)
-                            {
-                                Log.Success($"Injected plugin: {plugin.Name}");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error($"Error injecting plugin {plugin.Name}: {ex.Message}");
-                        }
-                    }
-                }
-                
-                string themeManagerScript = GenerateThemeManagerScript();
-                try
-                {
-                    await page.EvaluateAsync(themeManagerScript);
-                    if (iPage == 1)
-                    {
-                        Log.Success("Theme manager injected");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log.Error($"Error injecting theme manager: {ex.Message}");
-                    themesInjected = false;
-                }
-                
-                var themesDir = Path.Combine(root, "themes");
-                if (Directory.Exists(themesDir))
-                {
-                    foreach (string themeDir in Directory.GetDirectories(themesDir))
-                    {
-                        string scriptFile = Path.Combine(themeDir, "main.js");
-                        if (File.Exists(scriptFile))
-                        {
-                            var dirInfo = new DirectoryInfo(themeDir);
-                            string themeId = dirInfo.Name;
-                            string content = File.ReadAllText(scriptFile);
-                            
-                            string wrappedScript = $@"
-                            (function() {{
-                                // Register theme with theme manager
-                                if (window.BetterTeamsThemeManager) {{
-                                    window.BetterTeamsThemeManager.registerTheme('{themeId}', function() {{
-                                        try {{
-                                            {content}
-                                            console.log('Theme {themeId} applied successfully');
-                                            return true;
-                                        }} catch(e) {{
-                                            console.error('Error applying theme {themeId}:', e);
-                                            return false;
-                                        }}
-                                    }}, function() {{
-                                        try {{
-                                            // Clean up theme elements
-                                            const themeElements = document.querySelectorAll('[data-betterteams-theme=""{themeId}""]');
-                                            themeElements.forEach(el => el.remove());
-                                            console.log('Theme {themeId} removed successfully');
-                                            return true;
-                                        }} catch(e) {{
-                                            console.error('Error removing theme {themeId}:', e);
-                                            return false;
-                                        }}
-                                    }});
-                                }}
-                            }})();";
-                            
-                            try
-                            {
-                                await page.EvaluateAsync(wrappedScript);
-
-                                if (iPage == 1)
-                                {
-                                    Log.Success($"Theme {themeId} registered");
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Log.Error($"Error registering theme {themeId}: {ex.Message}");
-                                themesInjected = false;
-                            }
-                        }
-                    }
-                    
-                    if (!string.IsNullOrEmpty(_config.ActiveThemeId))
-                    {
-                        string activateThemeScript = $@"
-                        (function() {{
-                            if (window.BetterTeamsThemeManager) {{
-                                window.BetterTeamsThemeManager.activateTheme('{_config.ActiveThemeId}');
-                            }}
-                        }})();";
-                        
-                        try
-                        {
-                            await page.EvaluateAsync(activateThemeScript);
-                            if (iPage == 1)
-                            {
-                                Log.Success($"Activated theme: {_config.ActiveThemeId}");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error($"Error activating theme {_config.ActiveThemeId}: {ex.Message}");
-                        }
-                    }
-                }
-            }
-
-            if (mainScriptInjected)
-            {
-                Log.Success("Main script injected successfully");
-            }
-            else
-            {
-                Log.Error("Failed to inject main script");
-                return;
-            }
-
-            if (themesInjected)
-            {
-                Log.Success("Themes injected successfully");
-            }
-            else
-            {
-                Log.Error("Failed to inject themes");
-                return;
+                await InjectMainAndExtensionsAsync(page, mainScript, installedPlugins, root);
             }
 
             ResizeWindow("Microsoft Teams");
             await browser.CloseAsync();
         }
+
+
+        // Inject all our core bindings + WS connector into a single page/frame
+        private static async Task InjectIntoPageAsync(IPage page)
+        {
+            iPages++;
+
+            try
+            {
+
+                string wsScript = GenerateWebSocketConnectorScript(_config.WebSocketPort);
+                await page.EvaluateAsync(wsScript);
+
+                await page.ExposeBindingAsync("BetterTeamsActionCallbackAsync", (BindingSource src, string json) =>
+                {
+                    try
+                    {
+                        var action = JsonSerializer.Deserialize<WebSocketMessage>(json);
+                        return action != null
+                            ? HandlePageAction(page, action)
+                            : Task.CompletedTask;
+                    }
+                    catch (Exception e)
+                    {
+                        Log.Error($"ActionCallback error: {e.Message}");
+                        return Task.CompletedTask;
+                    }
+                });
+
+                await page.EvaluateAsync(@"
+                    window.BetterTeamsActionHandler = (action, data) => {
+                        window.BetterTeamsActionCallbackAsync(JSON.stringify({ Action: action, Data: data || {} }));
+                    };
+                ");
+
+                await page.ExposeBindingAsync("notifyBridgeReadyAsync", (BindingSource _) =>
+                {
+                    Log.Success("BetterTeams bridge connected");
+                    return Task.CompletedTask;
+                });
+
+                await page.EvaluateAsync(@"
+                    window.notifyBridgeReady = () => {
+                        if (window.notifyBridgeReadyAsync) {
+                            window.notifyBridgeReadyAsync();
+                            console.log('BetterTeams bridge is ready');
+                        }
+                    };
+                ");
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"InjectIntoPage failed: {ex.Message}");
+            }
+        }
+
+        private static async Task InjectMainAndExtensionsAsync(
+            IPage page,
+            string mainScriptPath,
+            List<PluginInfo> plugins,
+            string rootScriptsDir)
+        {
+            if (!File.Exists(mainScriptPath))
+            {
+
+                if (iPages == 1)
+                {
+                    Log.Error($"Main script missing: {mainScriptPath}");
+                }
+                return;
+            }
+
+            try
+            {
+                var mainCode = File.ReadAllText(mainScriptPath);
+                await page.EvaluateAsync(mainCode);
+            }
+            catch (Exception ex)
+            {
+
+                if (iPages == 1)
+                {
+                    Log.Error($"Main script injection failed: {ex.Message}");
+                }
+            }
+
+            foreach (var plugin in plugins)
+            {
+                string pluginScript = Path.Combine(rootScriptsDir, "plugins", plugin.Id, "main.js");
+                if (!File.Exists(pluginScript)) continue;
+
+                try
+                {
+                    var code = File.ReadAllText(pluginScript);
+                    await page.EvaluateAsync(code);
+
+                    if(iPages == 1)
+                    {
+                        Log.Success($"Plugin injected: {plugin.Name}");
+                    }
+                }
+                catch (Exception ex)
+                {
+
+                    if (iPages == 1)
+                    {
+                        Log.Error($"Plugin {plugin.Name} injection failed: {ex.Message}");
+                    }
+                }
+            }
+
+            try
+            {
+                string themeMgrCode = GenerateThemeManagerScript();
+                await page.EvaluateAsync(themeMgrCode);
+
+                if (iPages == 1)
+                {
+                    Log.Success("Theme manager injected");
+                }
+            }
+            catch (Exception ex)
+            {
+
+                if (iPages == 1)
+                {
+                    Log.Error($"Theme manager injection failed: {ex.Message}");
+                }
+            }
+
+            var themesDir = Path.Combine(rootScriptsDir, "themes");
+            if (!Directory.Exists(themesDir)) return;
+
+            foreach (var themeDir in Directory.GetDirectories(themesDir))
+            {
+                string themeId = new DirectoryInfo(themeDir).Name;
+                string themeMainJs = Path.Combine(themeDir, "main.js");
+                if (!File.Exists(themeMainJs)) continue;
+
+                string themeCode = File.ReadAllText(themeMainJs);
+                string wrapped = $@"
+                    (function() {{
+                        if (window.BetterTeamsThemeManager) {{
+                            window.BetterTeamsThemeManager.registerTheme(
+                                '{themeId}',
+                                () => {{ {themeCode} return true; }},
+                                () => {{
+                                    document
+                                      .querySelectorAll('[data-betterteams-theme=""{themeId}""]')
+                                      .forEach(el => el.remove());
+                                    return true;
+                                }}
+                            );
+                        }}
+                    }})();
+                ";
+
+                try
+                {
+                    await page.EvaluateAsync(wrapped);
+                    if (iPages == 1)
+                    {
+                        Log.Success($"Theme registered: {themeId}");
+                    }
+                }
+                catch (Exception ex)
+                {
+
+                    if (iPages == 1)
+                    {
+                        Log.Error($"Registering theme {themeId} failed: {ex.Message}");
+                    }
+                }
+            }
+
+            if (!string.IsNullOrEmpty(_config.ActiveThemeId))
+            {
+                try
+                {
+                    await page.EvaluateAsync($@"window.BetterTeamsThemeManager?.activateTheme('{_config.ActiveThemeId}');");
+
+                    if (iPages == 1)
+                    {
+                        Log.Success($"Activated theme: {_config.ActiveThemeId}");
+                    }
+                }
+                catch (Exception ex)
+                {
+
+                    if (iPages == 1)
+                    {
+                        Log.Error($"Activating theme {_config.ActiveThemeId} failed: {ex.Message}");
+                    }
+                }
+            }
+        }
+
 
         private static async Task HandlePageAction(IPage page, WebSocketMessage message)
         {
@@ -818,12 +801,10 @@ namespace MsTeamsInjector
         }
 
         activateTheme(themeId) {
-            // Deactivate current theme if any
             if (this.activeTheme) {
                 this.deactivateTheme();
             }
 
-            // Activate new theme
             const theme = this.themes[themeId];
             if (theme) {
                 console.log(`Activating theme: ${themeId}`);
@@ -867,24 +848,20 @@ namespace MsTeamsInjector
                 return;
             }
 
-            // Listen for theme activation
             window.BetterTeamsWS.on('theme_activated', (data) => {
                 if (data.ThemeId) {
                     this.activateTheme(data.ThemeId);
                 }
             });
 
-            // Listen for theme deactivation
             window.BetterTeamsWS.on('theme_deactivated', () => {
                 this.deactivateTheme();
             });
 
-            // Request active theme on connection
             window.BetterTeamsWS.on('connected', () => {
                 window.BetterTeamsWS.send('get_active_theme');
             });
 
-            // Handle active theme response
             window.BetterTeamsWS.on('active_theme', (data) => {
                 if (data.ThemeId && data.ThemeId !== this.activeTheme) {
                     this.activateTheme(data.ThemeId);

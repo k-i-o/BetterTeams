@@ -23,6 +23,7 @@
             pet.style.cursor = 'pointer';
             pet.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
             pet.style.transition = 'all 0.3s ease';
+            pet.style.userSelect = 'none';
             
             // Add eyes to make it look like a pet
             const leftEye = document.createElement('div');
@@ -72,6 +73,7 @@
             speechBubble.style.textAlign = 'center';
             speechBubble.style.minWidth = '80px';
             speechBubble.style.display = 'none';
+            speechBubble.style.color = 'black';
             speechBubble.style.zIndex = '10000';
             pet.appendChild(speechBubble);
 
@@ -90,17 +92,16 @@
             let offsetX, offsetY;
             let autoMoving = false;
             
-            // Messages for interactions
             const messages = [
-                "Ciao!",
-                "Come stai?",
-                "Mi piace Teams!",
-                "Sono carino, vero?",
-                "Clicca ancora!",
-                "Che bello essere qui!",
-                "Ti aiuto io!",
-                "Buona giornata!",
-                "Sono il tuo assistente!"
+                "WOOOO BETTERTEAMS IS CRAZY!",
+                "Hello!",
+                "How are you?",
+                "Aren't I cute?",
+                "Click me again!",
+                "It's nice to be here!",
+                "Let me help you!",
+                "Have a great day!",
+                "I'm your assistant!"
             ];
             
             // Click interaction
@@ -110,9 +111,9 @@
                     const colors = ['#ffcc00', '#ff6b6b', '#48dbfb', '#1dd1a1', '#f368e0', '#ff9f43'];
                     const randomColor = colors[Math.floor(Math.random() * colors.length)];
                     pet.style.backgroundColor = randomColor;
-                    
+                   
                     // Show random message
-                    const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+                    const randomMessage = messages[!Math.Floor(Math.random() * 1000000) ? 0 : Math.floor(Math.random() * messages.length)];
                     speak(randomMessage);
                     
                     // Jump animation
@@ -206,7 +207,7 @@
             
             // Initial greeting
             setTimeout(() => {
-                speak("Ciao! Sono qui per aiutarti!");
+                speak("Hi! Here to help!");
             }, 1000);
             
             // Add to document
