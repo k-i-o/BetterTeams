@@ -1,0 +1,9 @@
+{
+  "id": "default-marketplace",
+  "name": "Plugin Marketplace",
+  "description": "Official plugin and theme marketplace for BetterTeams",
+  "version": "1.0.0",
+  "author": "BetterTeams",
+  "repository": "https://github.com/betterteams/betterteams",
+  "main": "main.js"
+}

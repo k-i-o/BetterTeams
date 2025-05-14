@@ -145,6 +145,11 @@
                 color: var(--colorNeutralForeground3);
             }
             
+            .marketplace-item-buttons {
+                display: flex;
+                gap: 8px;
+            }
+            
             .marketplace-item-button {
                 padding: 6px 12px;
                 border: none;
@@ -157,6 +162,14 @@
             
             .marketplace-item-button.uninstall {
                 background: var(--colorStatusDangerBackground);
+            }
+            
+            .marketplace-item-button.deactivate {
+                background: var(--colorNeutralForeground3);
+            }
+            
+            .marketplace-item-button.activate {
+                background: var(--colorStatusSuccessBackground);
             }
             
             .marketplace-item-button:disabled {
@@ -186,6 +199,8 @@
     }
     
     function renderPluginItem(plugin, isInstalled) {
+        const isActive = isInstalled && plugin.isActive !== false;
+        
         return `
         <div class="marketplace-item" data-id="${plugin.id}">
             ${isInstalled ? '<div class="marketplace-item-installed">Installed</div>' : ''}
@@ -194,9 +209,14 @@
             <div class="marketplace-item-description">${plugin.description}</div>
             <div class="marketplace-item-actions">
                 <div class="marketplace-item-version">v${plugin.version}</div>
-                ${isInstalled 
-                    ? '<button class="marketplace-item-button uninstall">Uninstall</button>' 
-                    : '<button class="marketplace-item-button">Install</button>'}
+                <div class="marketplace-item-buttons">
+                    ${isInstalled 
+                        ? `<button class="marketplace-item-button uninstall">Uninstall</button>
+                           ${isActive 
+                              ? '<button class="marketplace-item-button deactivate">Deactivate</button>' 
+                              : '<button class="marketplace-item-button activate">Activate</button>'}`
+                        : '<button class="marketplace-item-button">Install</button>'}
+                </div>
             </div>
         </div>
         `;
@@ -353,6 +373,59 @@
         ws.on('connected', () => {
             loadPlugins();
             loadThemes();
+        });
+        
+        // Plugin installation and uninstallation
+        document.addEventListener('click', (e) => {
+            if (e.target.matches('.marketplace-item-button:not(.uninstall):not(.activate):not(.deactivate)')) {
+                const item = e.target.closest('.marketplace-item');
+                if (!item) return;
+                
+                const id = item.dataset.id;
+                if (!id) return;
+                
+                e.target.disabled = true;
+                
+                ws.send('install_plugin', { id });
+            }
+            
+            if (e.target.matches('.marketplace-item-button.uninstall')) {
+                const item = e.target.closest('.marketplace-item');
+                if (!item) return;
+                
+                const id = item.dataset.id;
+                if (!id) return;
+                
+                if (confirm(`Are you sure you want to uninstall this plugin?`)) {
+                    e.target.disabled = true;
+                    
+                    ws.send('uninstall_plugin', { id });
+                }
+            }
+            
+            if (e.target.matches('.marketplace-item-button.activate')) {
+                const item = e.target.closest('.marketplace-item');
+                if (!item) return;
+                
+                const id = item.dataset.id;
+                if (!id) return;
+                
+                e.target.disabled = true;
+                
+                ws.send('activatePlugin', { id });
+            }
+            
+            if (e.target.matches('.marketplace-item-button.deactivate')) {
+                const item = e.target.closest('.marketplace-item');
+                if (!item) return;
+                
+                const id = item.dataset.id;
+                if (!id) return;
+                
+                e.target.disabled = true;
+                
+                ws.send('deactivatePlugin', { id });
+            }
         });
     }
     

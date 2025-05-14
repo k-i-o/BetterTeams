@@ -12,6 +12,7 @@ namespace MsTeamsInjector
     class Program
     {
         private const string ConfigFileName = "BetterMsTeamsConfig.json";
+        private const string PluginConfigFileName = "BetterMsTeamsPluginConfig.json";
 
         [DllImport("user32.dll")]
         private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
@@ -32,7 +33,9 @@ namespace MsTeamsInjector
         private struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
 
         private static InjectorConfig _config = new();
+        private static PluginConfig _pluginConfig = new();
         private static PluginManager _pluginManager;
+        private static WebSocketServer _webSocketServer;
 
         static async Task Main(string[] args)
         {
@@ -41,11 +44,24 @@ namespace MsTeamsInjector
             Log.Info($"The application is in admin mode: {IsElevated()}");
 
             _config = LoadOrCreateConfig();
+            _pluginConfig = LoadOrCreatePluginConfig();
             TeamsPathHelper.DiscoverTeamsPathIfMissing(_config);
             SaveConfig();
 
             string scriptsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _config.ScriptsDirectory);
-            _pluginManager = new PluginManager(scriptsDir);
+            _pluginManager = new PluginManager(scriptsDir, _pluginConfig);
+            
+            // Start WebSocket server before anything else
+            _webSocketServer = new WebSocketServer(_pluginManager, _config);
+            
+            // Run WebSocket server in background
+            _ = Task.Run(async () => {
+                try {
+                    await _webSocketServer.Start();
+                } catch (Exception ex) {
+                    Log.Error($"WebSocket server error: {ex.Message}");
+                }
+            });
             
             KillTeamsProcess();
             LaunchTeams();
@@ -73,6 +89,8 @@ namespace MsTeamsInjector
                         Console.WriteLine("  install_theme <id> - Install a theme");
                         Console.WriteLine("  uninstall_plugin <id> - Uninstall a plugin");
                         Console.WriteLine("  uninstall_theme <id> - Uninstall a theme");
+                        Console.WriteLine("  activate_plugin <id> - Activate a plugin");
+                        Console.WriteLine("  deactivate_plugin <id> - Deactivate a plugin");
                         Console.WriteLine("  activate_theme <id> - Activate a theme");
                         Console.WriteLine("  deactivate_theme - Deactivate the current theme");
                         Console.WriteLine("  exit - Exit the program");
@@ -149,6 +167,30 @@ namespace MsTeamsInjector
                             Log.Error("Theme ID required");
                         }
                         break;
+                    case "activate_plugin":
+                        if (parts.Length > 1)
+                        {
+                            await ActivatePlugin(parts[1]);
+                            await Task.Delay(_config.ReInjectDelayMs);
+                            await InjectScriptsIntoAllPages();
+                        }
+                        else
+                        {
+                            Log.Error("Plugin ID required");
+                        }
+                        break;
+                    case "deactivate_plugin":
+                        if (parts.Length > 1)
+                        {
+                            await DeactivatePlugin(parts[1]);
+                            await Task.Delay(_config.ReInjectDelayMs);
+                            await InjectScriptsIntoAllPages();
+                        }
+                        else
+                        {
+                            Log.Error("Plugin ID required");
+                        }
+                        break;
                     case "activate_theme":
                         if (parts.Length > 1)
                         {
@@ -164,6 +206,11 @@ namespace MsTeamsInjector
                         break;
                     case "exit":
                         Log.Info("Exiting...");
+                        // Stop the WebSocket server
+                        if (_webSocketServer != null)
+                        {
+                            _webSocketServer.Stop();
+                        }
                         return;
                     default:
                         Log.Warning($"Unknown command: {parts[0]}");
@@ -226,16 +273,26 @@ namespace MsTeamsInjector
         private static void ListInstalledPlugins()
         {
             var plugins = _pluginManager.GetInstalledPlugins();
+            
             if (plugins.Count == 0)
             {
                 Log.Info("No plugins installed");
                 return;
             }
-
-            Log.Info("Installed plugins:");
+            
+            Console.WriteLine("\nInstalled Plugins:");
+            Console.WriteLine("------------------");
+            
             foreach (var plugin in plugins)
             {
-                Log.Info($"  {plugin.Name} v{plugin.Version} - {plugin.Description}");
+                string status = plugin.IsActive ? "Active" : "Inactive";
+                Console.WriteLine($"ID: {plugin.Id}");
+                Console.WriteLine($"Name: {plugin.Name}");
+                Console.WriteLine($"Description: {plugin.Description}");
+                Console.WriteLine($"Version: {plugin.Version}");
+                Console.WriteLine($"Author: {plugin.Author}");
+                Console.WriteLine($"Status: {status}");
+                Console.WriteLine("------------------");
             }
         }
 
@@ -342,12 +399,61 @@ namespace MsTeamsInjector
             return new InjectorConfig();
         }
 
+        private static PluginConfig LoadOrCreatePluginConfig()
+        {
+            string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, PluginConfigFileName);
+            
+            if (File.Exists(configPath))
+            {
+                try
+                {
+                    string json = File.ReadAllText(configPath);
+                    var config = JsonSerializer.Deserialize<PluginConfig>(json);
+                    
+                    if (config != null)
+                    {
+                        Log.Success("Plugin config loaded successfully");
+                        return config;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"Error loading plugin config: {ex.Message}");
+                }
+            }
+            
+            Log.Warning("Creating new plugin config");
+            return new PluginConfig();
+        }
+
         private static void SaveConfig()
         {
             string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterMsTeams");
             string path = Path.Combine(dir, ConfigFileName);
             string json = JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(path, json);
+        }
+
+        private static void SavePluginConfig()
+        {
+            string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, PluginConfigFileName);
+            
+            try
+            {
+                var options = new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                };
+                
+                string json = JsonSerializer.Serialize(_pluginConfig, options);
+                File.WriteAllText(configPath, json);
+                
+                Log.Success("Plugin config saved successfully");
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error saving plugin config: {ex.Message}");
+            }
         }
 
         private static void KillTeamsProcess()
@@ -440,14 +546,8 @@ namespace MsTeamsInjector
             IBrowserContext context = browser.Contexts.FirstOrDefault()
                                       ?? await browser.NewContextAsync();
 
-            // Ensure any future pages also get our scripts
-            context.Page += (_, newPage) => InjectIntoPageAsync(newPage);
-
             // Inject into already-open pages
             var pagesSnapshot = context.Pages.ToList();
-            var injectTasks = pagesSnapshot.Select(InjectIntoPageAsync);
-            await Task.WhenAll(injectTasks);
-
             Log.Success("WebSocket connector & bindings injected into all pages.");
 
             // Now load main script + plugins + themes on each page
@@ -464,61 +564,6 @@ namespace MsTeamsInjector
             await browser.CloseAsync();
         }
 
-
-        // Inject all our core bindings + WS connector into a single page/frame
-        private static async Task InjectIntoPageAsync(IPage page)
-        {
-            iPages++;
-
-            try
-            {
-
-                string wsScript = GenerateWebSocketConnectorScript(_config.WebSocketPort);
-                await page.EvaluateAsync(wsScript);
-
-                await page.ExposeBindingAsync("BetterTeamsActionCallbackAsync", (BindingSource src, string json) =>
-                {
-                    try
-                    {
-                        var action = JsonSerializer.Deserialize<WebSocketMessage>(json);
-                        return action != null
-                            ? HandlePageAction(page, action)
-                            : Task.CompletedTask;
-                    }
-                    catch (Exception e)
-                    {
-                        Log.Error($"ActionCallback error: {e.Message}");
-                        return Task.CompletedTask;
-                    }
-                });
-
-                await page.EvaluateAsync(@"
-                    window.BetterTeamsActionHandler = (action, data) => {
-                        window.BetterTeamsActionCallbackAsync(JSON.stringify({ Action: action, Data: data || {} }));
-                    };
-                ");
-
-                await page.ExposeBindingAsync("notifyBridgeReadyAsync", (BindingSource _) =>
-                {
-                    Log.Success("BetterTeams bridge connected");
-                    return Task.CompletedTask;
-                });
-
-                await page.EvaluateAsync(@"
-                    window.notifyBridgeReady = () => {
-                        if (window.notifyBridgeReadyAsync) {
-                            window.notifyBridgeReadyAsync();
-                            console.log('BetterTeams bridge is ready');
-                        }
-                    };
-                ");
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"InjectIntoPage failed: {ex.Message}");
-            }
-        }
-
         private static async Task InjectMainAndExtensionsAsync(
             IPage page,
             string mainScriptPath,
@@ -527,7 +572,6 @@ namespace MsTeamsInjector
         {
             if (!File.Exists(mainScriptPath))
             {
-
                 if (iPages == 1)
                 {
                     Log.Error($"Main script missing: {mainScriptPath}");
@@ -542,34 +586,35 @@ namespace MsTeamsInjector
             }
             catch (Exception ex)
             {
-
                 if (iPages == 1)
                 {
                     Log.Error($"Main script injection failed: {ex.Message}");
                 }
             }
 
-            foreach (var plugin in plugins)
+            // Inject active plugins only
+            foreach (var plugin in plugins.Where(p => p.IsActive))
             {
-                string pluginScript = Path.Combine(rootScriptsDir, "plugins", plugin.Id, "main.js");
-                if (!File.Exists(pluginScript)) continue;
-
-                try
+                string pluginDir = Path.Combine(rootScriptsDir, "plugins", plugin.Id);
+                string mainJsPath = Path.Combine(pluginDir, "main.js");
+                
+                if (File.Exists(mainJsPath))
                 {
-                    var code = File.ReadAllText(pluginScript);
-                    await page.EvaluateAsync(code);
-
-                    if(iPages == 1)
+                    try
                     {
-                        Log.Success($"Plugin injected: {plugin.Name}");
+                        var scriptContent = File.ReadAllText(mainJsPath);
+                        await page.EvaluateAsync(scriptContent);
+                        if (iPages == 1)
+                        {
+                            Log.Success($"Injected plugin: {plugin.Name}");
+                        }
                     }
-                }
-                catch (Exception ex)
-                {
-
-                    if (iPages == 1)
+                    catch (Exception ex)
                     {
-                        Log.Error($"Plugin {plugin.Name} injection failed: {ex.Message}");
+                        if (iPages == 1)
+                        {
+                            Log.Error($"Failed to inject plugin {plugin.Name}: {ex.Message}");
+                        }
                     }
                 }
             }
@@ -586,7 +631,6 @@ namespace MsTeamsInjector
             }
             catch (Exception ex)
             {
-
                 if (iPages == 1)
                 {
                     Log.Error($"Theme manager injection failed: {ex.Message}");
@@ -630,7 +674,6 @@ namespace MsTeamsInjector
                 }
                 catch (Exception ex)
                 {
-
                     if (iPages == 1)
                     {
                         Log.Error($"Registering theme {themeId} failed: {ex.Message}");
@@ -651,7 +694,6 @@ namespace MsTeamsInjector
                 }
                 catch (Exception ex)
                 {
-
                     if (iPages == 1)
                     {
                         Log.Error($"Activating theme {_config.ActiveThemeId} failed: {ex.Message}");
@@ -660,64 +702,6 @@ namespace MsTeamsInjector
             }
         }
 
-
-        private static async Task HandlePageAction(IPage page, WebSocketMessage message)
-        {
-            Log.Info($"Received action from page: {message.Action}");
-            
-            switch (message.Action)
-            {
-                case "get_plugins":
-                    var plugins = await _pluginManager.GetAvailablePlugins();
-                    await SendPageEvent(page, "available_plugins", new { Plugins = plugins });
-                    break;
-                case "get_themes":
-                    var themes = await _pluginManager.GetAvailableThemes();
-                    await SendPageEvent(page, "available_themes", new { Themes = themes });
-                    break;
-                case "get_installed_plugins":
-                    var installedPlugins = _pluginManager.GetInstalledPlugins();
-                    await SendPageEvent(page, "installed_plugins", new { Plugins = installedPlugins });
-                    break;
-                case "get_installed_themes":
-                    var installedThemes = _pluginManager.GetInstalledThemes();
-                    await SendPageEvent(page, "installed_themes", new { Themes = installedThemes, ActiveThemeId = _config.ActiveThemeId });
-                    break;
-                case "get_active_theme":
-                    await SendActiveTheme(page);
-                    break;
-                case "install_plugin":
-                    if (message.Data.ContainsKey("id") && message.Data["id"] is JsonElement pluginIdElement && pluginIdElement.ValueKind == JsonValueKind.String)
-                    {
-                        string pluginId = pluginIdElement.GetString();
-                        bool success = await _pluginManager.InstallPlugin(pluginId);
-                        await SendPageEvent(page, "plugin_installed", new { Success = success, Id = pluginId });
-                    }
-                    break;
-                case "install_theme":
-                    if (message.Data.ContainsKey("id") && message.Data["id"] is JsonElement themeIdElement && themeIdElement.ValueKind == JsonValueKind.String)
-                    {
-                        string themeId = themeIdElement.GetString();
-                        bool success = await _pluginManager.InstallTheme(themeId);
-                        await SendPageEvent(page, "theme_installed", new { Success = success, Id = themeId });
-                    }
-                    break;
-                case "activate_theme":
-                    if (message.Data.ContainsKey("id") && message.Data["id"] is JsonElement activateThemeIdElement && activateThemeIdElement.ValueKind == JsonValueKind.String)
-                    {
-                        string themeId = activateThemeIdElement.GetString();
-                        await ActivateTheme(themeId);
-                    }
-                    break;
-                case "deactivate_theme":
-                    await DeactivateTheme();
-                    break;
-                default:
-                    Log.Warning($"Unknown action: {message.Action ?? "None"}");
-                    break;
-            }
-        }
-        
         private static async Task SendActiveTheme(IPage page)
         {
             try
@@ -842,32 +826,6 @@ namespace MsTeamsInjector
             return false;
         }
 
-        setupWebSocketListeners() {
-            if (!window.BetterTeamsWS) {
-                console.error('BetterTeamsWS not available, theme manager will not respond to WebSocket events');
-                return;
-            }
-
-            window.BetterTeamsWS.on('theme_activated', (data) => {
-                if (data.ThemeId) {
-                    this.activateTheme(data.ThemeId);
-                }
-            });
-
-            window.BetterTeamsWS.on('theme_deactivated', () => {
-                this.deactivateTheme();
-            });
-
-            window.BetterTeamsWS.on('connected', () => {
-                window.BetterTeamsWS.send('get_active_theme');
-            });
-
-            window.BetterTeamsWS.on('active_theme', (data) => {
-                if (data.ThemeId && data.ThemeId !== this.activeTheme) {
-                    this.activateTheme(data.ThemeId);
-                }
-            });
-        }
     }
 
     window.BetterTeamsThemeManager = new ThemeManager();
@@ -875,88 +833,36 @@ namespace MsTeamsInjector
 })();";
         }
 
-        private static string GenerateWebSocketConnectorScript(int port)
+        private static async Task ActivatePlugin(string pluginId)
         {
-            return @"
-(function() {
-    if (window.BetterTeamsWS) {
-        console.log('BetterTeams Message Bridge already initialized');
-        return;
-    }
-
-    class BetterTeamsMessageBridge {
-        constructor() {
-            this.connected = true;
-            this.eventListeners = {};
-            this.setupMessageListener();
-            
-            // Notify that we're ready to receive messages
-            console.log('BetterTeams Message Bridge initialized');
-            this.emit('connected', {});
-            
-            // Create a hidden div for communication
-            this.createBridgeElement();
-            
-            // Notify the native app that we're ready
-            if (window.notifyBridgeReadyAsync) {
-                window.notifyBridgeReadyAsync();
+            bool success = _pluginManager.ActivatePlugin(pluginId);
+            if (success)
+            {
+                Log.Success($"Plugin {pluginId} activated successfully");
+                SavePluginConfig();
+                Log.Info("Reinjecting scripts for changes to take effect...");
+                await InjectScriptsIntoAllPages();
+            }
+            else
+            {
+                Log.Error($"Failed to activate plugin {pluginId}");
             }
         }
 
-        createBridgeElement() {
-            // Create a hidden div to mark our presence
-            const bridgeElement = document.createElement('div');
-            bridgeElement.id = 'betterteams-bridge';
-            bridgeElement.style.display = 'none';
-            bridgeElement.setAttribute('data-port', '" + port + @"');
-            document.body.appendChild(bridgeElement);
-        }
-
-        setupMessageListener() {
-            // Listen for custom events from the page
-            document.addEventListener('BetterTeamsEvent', (e) => {
-                if (e.detail && e.detail.action) {
-                    this.emit(e.detail.action, e.detail.data || {});
-                }
-            });
-        }
-
-        send(action, data = {}) {
-            try {
-                // Use the exposed binding to communicate with the native app
-                if (window.BetterTeamsActionHandler) {
-                    window.BetterTeamsActionHandler(action, data);
-                    return true;
-                } else {
-                    console.error('BetterTeamsActionHandler not available');
-                    return false;
-                }
-            } catch (e) {
-                console.error('Error sending message:', e);
-                return false;
+        private static async Task DeactivatePlugin(string pluginId)
+        {
+            bool success = _pluginManager.DeactivatePlugin(pluginId);
+            if (success)
+            {
+                Log.Success($"Plugin {pluginId} deactivated successfully");
+                SavePluginConfig();
+                Log.Info("Reinjecting scripts for changes to take effect...");
+                await InjectScriptsIntoAllPages();
             }
-        }
-
-        on(event, callback) {
-            if (!this.eventListeners[event]) {
-                this.eventListeners[event] = [];
+            else
+            {
+                Log.Error($"Failed to deactivate plugin {pluginId}");
             }
-            this.eventListeners[event].push(callback);
-        }
-
-        off(event, callback) {
-            if (!this.eventListeners[event]) return;
-            this.eventListeners[event] = this.eventListeners[event].filter(cb => cb !== callback);
-        }
-
-        emit(event, data) {
-            if (!this.eventListeners[event]) return;
-            this.eventListeners[event].forEach(callback => callback(data));
-        }
-    }
-
-    window.BetterTeamsWS = new BetterTeamsMessageBridge();
-})();";
         }
     }
 }

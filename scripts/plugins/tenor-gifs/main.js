@@ -1,7 +1,6 @@
 (function () {
 
 
-
     async function searchGifs(searchTerm = 'funny', limit = 20) {
         try {
             const response = await fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&client_key=${TENOR_CLIENT_KEY}&limit=${limit}`);
@@ -15,26 +14,11 @@
 
     async function copyGifToClipboard(gifUrl) {
         try {
-            if (window.betterTeams && window.betterTeams.sendWebSocketMessage) {
-                window.betterTeams.sendWebSocketMessage({
-                    action: "copyToClipboard",
-                    type: "gif",
-                    url: gifUrl
-                });
+            if (window.BetterTeamsWS) {
+                window.BetterTeamsWS.copyToClipboard(gifUrl, 'gif');
                 
                 showNotification("GIF copied to clipboard. You can now paste it in the chat.");
                 return true;
-            }
-            
-            try {
-                const response = await fetch(gifUrl);
-                const blob = await response.blob();
-                const item = new ClipboardItem({ 'image/gif': blob });
-                await navigator.clipboard.write([item]);
-                console.log('GIF copied to clipboard using ClipboardItem');
-                return true;
-            } catch (clipboardError) {
-                console.warn('Standard clipboard API failed:', clipboardError);
             }
             
             showNotification("Unable to copy GIF to clipboard. Please try pasting manually.", 10000);
@@ -113,20 +97,6 @@
                     </div>
                 `, 'click', () => {
                     copyGifToClipboard(gif.media_formats.gif.url);
-                    
-                    // Close the popup after click
-                    const closeButton = document.querySelector('[data-tid="sendMessageCommands-popup-close"]');
-                    if (closeButton) {
-                        closeButton.click();
-                    }
-                    
-                    // Focus the message input
-                    setTimeout(() => {
-                        const messageInput = document.querySelector('[data-tid="newMessageInput"]');
-                        if (messageInput) {
-                            messageInput.focus();
-                        }
-                    }, 300);
                 }));
             }
         } else {
@@ -172,29 +142,6 @@
             console.error('Error adding GIF section:', JSON.stringify(e));
         }
     }
-
-    // Initialize WebSocket connection if not already established
-    function ensureWebSocketConnection() {
-        // Check if BetterTeams WebSocket functionality is already available
-        if (!window.betterTeams) {
-            window.betterTeams = {};
-        }
-        
-        if (!window.betterTeams.sendWebSocketMessage) {
-            // Create a custom event to request WebSocket access from the C# application
-            const event = new CustomEvent('betterteams:request-websocket', {
-                detail: {
-                    plugin: 'tenor-gifs',
-                    features: ['clipboard']
-                }
-            });
-            
-            document.dispatchEvent(event);
-            
-            console.log('Requested WebSocket access for tenor-gifs plugin');
-        }
-    }
-
     const observer = new MutationObserver((mutations) => {
         for (const m of mutations) {
             for (const n of m.addedNodes) {
@@ -213,12 +160,5 @@
         }
     });
 
-    // Initialize the plugin
-    ensureWebSocketConnection();
     observer.observe(document.body, { childList: true, subtree: true });
-    
-    // Listen for WebSocket ready event from C# application
-    document.addEventListener('betterteams:websocket-ready', (event) => {
-        console.log('WebSocket connection is ready for tenor-gifs plugin');
-    });
 })(); 

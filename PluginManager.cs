@@ -31,6 +31,9 @@ namespace BetterTeams
         
         [JsonPropertyName("downloadUrl")]
         public string DownloadUrl { get; set; } = string.Empty;
+        
+        [JsonIgnore]
+        public bool IsActive { get; set; } = true;
     }
 
     public class PluginManager
@@ -41,11 +44,13 @@ namespace BetterTeams
         private readonly string _pluginsDirectory;
         private readonly string _themesDirectory;
         private readonly JsonSerializerOptions _jsonOptions;
+        private readonly PluginConfig _pluginConfig;
 
-        public PluginManager(string scriptsDirectory)
+        public PluginManager(string scriptsDirectory, PluginConfig pluginConfig)
         {
             _pluginsDirectory = Path.Combine(scriptsDirectory, "plugins");
             _themesDirectory = Path.Combine(scriptsDirectory, "themes");
+            _pluginConfig = pluginConfig ?? new PluginConfig();
             
             Directory.CreateDirectory(_pluginsDirectory);
             Directory.CreateDirectory(_themesDirectory);
@@ -56,6 +61,11 @@ namespace BetterTeams
                 PropertyNameCaseInsensitive = true,
                 WriteIndented = true
             };
+        }
+        
+        // Backward compatibility constructor
+        public PluginManager(string scriptsDirectory) : this(scriptsDirectory, new PluginConfig())
+        {
         }
 
         public async Task<List<PluginInfo>> GetAvailablePlugins()
@@ -153,6 +163,7 @@ namespace BetterTeams
                         if (manifest != null)
                         {
                             var plugin = manifest.ToPluginInfo(pluginFolderName);
+                            plugin.IsActive = _pluginConfig.IsPluginActive(plugin.Id);
                             plugins.Add(plugin);
                             
                             if (string.IsNullOrEmpty(manifest.Id))
@@ -363,6 +374,60 @@ namespace BetterTeams
                 Log.Error($"Error uninstalling theme: {ex.Message}");
                 return false;
             }
+        }
+
+        public bool DeactivatePlugin(string pluginId)
+        {
+            try
+            {
+                var pluginDir = Path.Combine(_pluginsDirectory, pluginId);
+                if (Directory.Exists(pluginDir))
+                {
+                    _pluginConfig.DeactivatePlugin(pluginId);
+                    Log.Success($"Plugin {pluginId} deactivated successfully");
+                    return true;
+                }
+                else
+                {
+                    Log.Warning($"Plugin {pluginId} not found");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error deactivating plugin: {ex.Message}");
+                return false;
+            }
+        }
+
+        public bool ActivatePlugin(string pluginId)
+        {
+            try
+            {
+                var pluginDir = Path.Combine(_pluginsDirectory, pluginId);
+                if (Directory.Exists(pluginDir))
+                {
+                    _pluginConfig.ActivatePlugin(pluginId);
+                    Log.Success($"Plugin {pluginId} activated successfully");
+                    return true;
+                }
+                else
+                {
+                    Log.Warning($"Plugin {pluginId} not found");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error activating plugin: {ex.Message}");
+                return false;
+            }
+        }
+
+        public List<PluginInfo> GetActivePlugins()
+        {
+            var plugins = GetInstalledPlugins();
+            return plugins.FindAll(p => p.IsActive);
         }
     }
 } 

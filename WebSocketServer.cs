@@ -122,23 +122,36 @@ namespace BetterTeams
         private async Task HandleWebSocketConnection(WebSocket webSocket)
         {
             var buffer = new byte[4096];
-            var receiveResult = await webSocket.ReceiveAsync(
-                new ArraySegment<byte>(buffer), _cancellationTokenSource.Token);
-
-            while (!receiveResult.CloseStatus.HasValue)
-            {
-                string receivedMessage = Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
-                await HandleWebSocketMessage(receivedMessage, webSocket);
-
-                Array.Clear(buffer, 0, buffer.Length);
-                receiveResult = await webSocket.ReceiveAsync(
+            
+            try {
+                var receiveResult = await webSocket.ReceiveAsync(
                     new ArraySegment<byte>(buffer), _cancellationTokenSource.Token);
-            }
 
-            await webSocket.CloseAsync(
-                receiveResult.CloseStatus.Value,
-                receiveResult.CloseStatusDescription,
-                _cancellationTokenSource.Token);
+                while (!receiveResult.CloseStatus.HasValue)
+                {
+                    string receivedMessage = Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
+                    Log.Info($"Received message: {receivedMessage}");
+                    await HandleWebSocketMessage(receivedMessage, webSocket);
+
+                    Array.Clear(buffer, 0, buffer.Length);
+                    receiveResult = await webSocket.ReceiveAsync(
+                        new ArraySegment<byte>(buffer), _cancellationTokenSource.Token);
+                }
+
+                await webSocket.CloseAsync(
+                    receiveResult.CloseStatus.Value,
+                    receiveResult.CloseStatusDescription,
+                    _cancellationTokenSource.Token);
+            }
+            catch (Exception ex) {
+                Log.Error($"WebSocket receive error: {ex.Message}");
+                try {
+                    if (webSocket.State == WebSocketState.Open) {
+                        await webSocket.CloseAsync(WebSocketCloseStatus.InternalServerError, 
+                            "Error processing messages", _cancellationTokenSource.Token);
+                    }
+                } catch { /* ignore errors during close */ }
+            }
         }
 
         private async Task HandleWebSocketMessage(string message, WebSocket socket)
@@ -151,15 +164,30 @@ namespace BetterTeams
                 if (root.TryGetProperty("action", out var actionElement))
                 {
                     string action = actionElement.GetString() ?? string.Empty;
+                    Log.Info($"Processing action: {action}");
                     
                     switch (action)
                     {
+                        case "ping":
+                            await SendResponse(socket, "pong", new { timestamp = DateTime.Now.ToString() });
+                            break;
+                            
+                        case "test_call":
+                            string data = root.TryGetProperty("data", out var dataElement) 
+                                ? dataElement.GetString() ?? "no data" 
+                                : "no data";
+                            Log.Info($"Test call received with data: {data}");
+                            await SendResponse(socket, "test_response", new { message = $"Received: {data}", timestamp = DateTime.Now.ToString() });
+                            break;
+                            
                         case "get_plugins":
                             await SendAvailablePlugins(socket);
                             break;
+                            
                         case "get_themes":
                             await SendAvailableThemes(socket);
                             break;
+                            
                         case "install_plugin":
                             if (root.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String)
                             {
@@ -168,6 +196,7 @@ namespace BetterTeams
                                 await SendResponse(socket, "plugin_installed", new { Success = success, Id = pluginId });
                             }
                             break;
+                            
                         case "install_theme":
                             if (root.TryGetProperty("id", out var themeIdElement) && themeIdElement.ValueKind == JsonValueKind.String)
                             {
@@ -176,6 +205,7 @@ namespace BetterTeams
                                 await SendResponse(socket, "theme_installed", new { Success = success, Id = themeId });
                             }
                             break;
+                            
                         case "uninstall_plugin":
                             if (root.TryGetProperty("id", out var pluginToUninstallElement) && pluginToUninstallElement.ValueKind == JsonValueKind.String)
                             {
@@ -184,6 +214,7 @@ namespace BetterTeams
                                 await SendResponse(socket, "plugin_uninstalled", new { Success = success, Id = pluginToUninstall });
                             }
                             break;
+                            
                         case "uninstall_theme":
                             if (root.TryGetProperty("id", out var themeToUninstallElement) && themeToUninstallElement.ValueKind == JsonValueKind.String)
                             {
@@ -192,12 +223,15 @@ namespace BetterTeams
                                 await SendResponse(socket, "theme_uninstalled", new { Success = success, Id = themeToUninstall });
                             }
                             break;
+                            
                         case "get_installed_plugins":
                             await SendInstalledPlugins(socket);
                             break;
+                            
                         case "get_installed_themes":
                             await SendInstalledThemes(socket);
                             break;
+                            
                         case "activate_theme":
                             if (root.TryGetProperty("id", out var themeToActivateElement) && themeToActivateElement.ValueKind == JsonValueKind.String)
                             {
@@ -205,24 +239,70 @@ namespace BetterTeams
                                 await ActivateTheme(socket, themeToActivate);
                             }
                             break;
+                            
                         case "deactivate_theme":
                             await DeactivateTheme(socket);
                             break;
+                            
                         case "get_active_theme":
                             await SendActiveTheme(socket);
                             break;
+                            
                         case "copyToClipboard":
                             await HandleCopyToClipboard(root);
                             break;
+                            
+                        case "activatePlugin":
+                            string pluginToActivate = root.TryGetProperty("id", out var pluginActivateElement) 
+                                ? pluginActivateElement.GetString() ?? string.Empty 
+                                : string.Empty;
+                                
+                            if (string.IsNullOrEmpty(pluginToActivate))
+                            {
+                                await SendResponse(socket, "error", new { message = "Plugin ID is required" });
+                                return;
+                            }
+                            
+                            bool successActivate = _pluginManager.ActivatePlugin(pluginToActivate);
+                            await SendResponse(socket, "pluginActivated", new { success = successActivate });
+                            await BroadcastReinjectMessage(500);
+                            await BroadcastPluginList();
+                            break;
+                            
+                        case "deactivatePlugin":
+                            string pluginToDeactivate = root.TryGetProperty("id", out var pluginDeactivateElement) 
+                                ? pluginDeactivateElement.GetString() ?? string.Empty 
+                                : string.Empty;
+                                
+                            if (string.IsNullOrEmpty(pluginToDeactivate))
+                            {
+                                await SendResponse(socket, "error", new { message = "Plugin ID is required" });
+                                return;
+                            }
+                            
+                            bool successDeactivate = _pluginManager.DeactivatePlugin(pluginToDeactivate);
+                            await SendResponse(socket, "pluginDeactivated", new { success = successDeactivate });
+                            await BroadcastReinjectMessage(500);
+                            await BroadcastPluginList();
+                            break;
+                            
                         default:
                             Log.Warning($"Unknown action: {action}");
+                            await SendResponse(socket, "error", new { message = $"Unknown action: {action}" });
                             break;
                     }
+                }
+                else {
+                    Log.Warning("Message missing action property");
+                    await SendResponse(socket, "error", new { message = "Missing 'action' property in message" });
                 }
             }
             catch (Exception ex)
             {
                 Log.Error($"Error handling WebSocket message: {ex.Message}");
+                try {
+                    await SendResponse(socket, "error", new { message = $"Server error: {ex.Message}" });
+                } catch { /* ignore errors during error response */ }
             }
         }
 
@@ -353,30 +433,40 @@ namespace BetterTeams
 
         private async Task SendResponse(WebSocket webSocket, string action, object data)
         {
-            var response = new WebSocketMessage
-            {
-                Action = action,
-                Data = JsonSerializer.Deserialize<Dictionary<string, object>>(
-                    JsonSerializer.Serialize(data))
-            };
-
-            var responseJson = JsonSerializer.Serialize(response);
-            var responseBuffer = Encoding.UTF8.GetBytes(responseJson);
+            if (webSocket.State != WebSocketState.Open) {
+                Log.Warning($"Cannot send response: WebSocket is not open (state: {webSocket.State})");
+                return;
+            }
             
-            await webSocket.SendAsync(
-                new ArraySegment<byte>(responseBuffer),
-                WebSocketMessageType.Text,
-                true,
-                _cancellationTokenSource.Token);
+            try {
+                var response = new WebSocketMessage {
+                    Action = action,
+                    Data = JsonSerializer.Deserialize<Dictionary<string, object>>(
+                        JsonSerializer.Serialize(data)) ?? new Dictionary<string, object>()
+                };
+
+                var responseJson = JsonSerializer.Serialize(response);
+                var responseBuffer = Encoding.UTF8.GetBytes(responseJson);
+                
+                await webSocket.SendAsync(
+                    new ArraySegment<byte>(responseBuffer),
+                    WebSocketMessageType.Text,
+                    true,
+                    _cancellationTokenSource.Token);
+                    
+                Log.Info($"Sent response: {action}");
+            }
+            catch (Exception ex) {
+                Log.Error($"Error sending response: {ex.Message}");
+            }
         }
 
         public async Task BroadcastMessage(string action, object data)
         {
-            var message = new WebSocketMessage
-            {
+            var message = new WebSocketMessage {
                 Action = action,
                 Data = JsonSerializer.Deserialize<Dictionary<string, object>>(
-                    JsonSerializer.Serialize(data))
+                    JsonSerializer.Serialize(data)) ?? new Dictionary<string, object>()
             };
 
             var messageJson = JsonSerializer.Serialize(message);
@@ -410,6 +500,35 @@ namespace BetterTeams
             foreach (var client in disconnectedClients)
             {
                 _clients.Remove(client);
+            }
+            
+            if (_clients.Count > 0) {
+                Log.Info($"Broadcasted {action} to {_clients.Count - disconnectedClients.Count} clients");
+            }
+        }
+
+        public async Task BroadcastReinjectMessage(int delayMs)
+        {
+            // Give the client time to receive the response before reinjecting
+            if (delayMs > 0) {
+                await Task.Delay(delayMs);
+            }
+            
+            await BroadcastMessage("reinject_required", new { });
+        }
+
+        public async Task BroadcastPluginList()
+        {
+            try
+            {
+                var plugins = _pluginManager.GetInstalledPlugins();
+                await BroadcastMessage("plugins_list", new {
+                    plugins = plugins,
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error broadcasting plugin list: {ex.Message}");
             }
         }
 

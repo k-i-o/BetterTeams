@@ -85,4 +85,214 @@
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
+
+
+    
+    console.log('WebSocket Client plugin initializing...');
+    
+    /**
+     * Native WebSocket client for BetterTeams
+     * This client uses direct WebSocket connection instead of Playwright bindings
+     */
+    class BetterTeamsDirectClient {
+        constructor() {
+            this.wsPort = 8097; // Default port for BetterTeams WebSocket
+            this.socket = null;
+            this.connected = false;
+            this.reconnectAttempts = 0;
+            this.maxReconnectAttempts = 5;
+            this.reconnectDelay = 2000;
+            this.eventListeners = {};
+            this.pendingMessages = [];
+            
+            // Create the global API
+            this.createGlobalAPI();
+            
+            // Connect to the WebSocket server
+            this.connect();
+        }
+        
+        createGlobalAPI() {
+            if (window.BetterTeamsWS) {
+                console.log('BetterTeamsWS already exists, not replacing existing client');
+                return;
+            }
+            
+            // Create the global API object
+            window.BetterTeamsWS = {
+                // Connection state
+                isConnected: () => this.connected,
+                
+                // Core methods
+                send: (action, data = {}) => this.send(action, data),
+                
+                // Event handling
+                on: (event, callback) => this.on(event, callback),
+                off: (event, callback) => this.off(event, callback),
+                
+                // Helpers for plugins
+                copyToClipboard: (url, type = "text") => {
+                    return this.send("copyToClipboard", { url, type });
+                },
+                
+                // Plugin registration
+                registerPlugin: (pluginId, features = []) => {
+                    console.log(`Plugin ${pluginId} registered for WebSocket access`);
+                    document.dispatchEvent(new CustomEvent('betterteams:websocket-ready', {
+                        detail: { pluginId }
+                    }));
+                    return true;
+                }
+            };
+            
+            console.log('BetterTeamsWS global API created');
+        }
+        
+        connect() {
+            if (this.socket && (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN)) {
+                return;
+            }
+            
+            try {
+                const url = `ws://localhost:${this.wsPort}`;
+                console.log(`Connecting to BetterTeams WebSocket server at ${url}...`);
+                
+                this.socket = new WebSocket(url);
+                
+                this.socket.onopen = () => {
+                    this.connected = true;
+                    this.reconnectAttempts = 0;
+                    console.log('Connected to BetterTeams WebSocket server');
+                    
+                    // Send any pending messages
+                    while (this.pendingMessages.length > 0) {
+                        const msg = this.pendingMessages.shift();
+                        this.doSend(msg);
+                    }
+                    
+                    // Emit connected event
+                    this.emit('connected', {});
+                };
+                
+                this.socket.onclose = (event) => {
+                    this.connected = false;
+                    console.log(`WebSocket connection closed (${event.code}: ${event.reason || 'No reason provided'})`);
+                    
+                    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                        this.reconnectAttempts++;
+                        console.log(`Reconnecting (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+                        
+                        setTimeout(() => this.connect(), this.reconnectDelay);
+                    } else {
+                        console.warn('Max reconnect attempts reached');
+                    }
+                };
+                
+                this.socket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                };
+                
+                this.socket.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        
+                        if (message.Action && message.Action !== 'pong') {
+                            console.log(`Received WebSocket message: ${message.Action}`, message);
+                        }
+                        
+                        if (message.Action) {
+                            this.emit(message.Action, message.Data || {});
+                        }
+                    } catch (e) {
+                        console.error('Error parsing WebSocket message:', e, event.data);
+                    }
+                };
+            } catch (error) {
+                console.error('Error connecting to WebSocket:', error);
+            }
+        }
+        
+        send(action, data = {}) {
+            const message = {
+                action: action,
+                ...data
+            };
+            
+            if (action !== 'ping') {
+                console.log(`Sending WebSocket message: ${action}`, message);
+            }
+            
+            if (!this.connected) {
+                console.warn('Not connected to WebSocket server, queuing message');
+                this.pendingMessages.push(message);
+                return false;
+            }
+            
+            return this.doSend(message);
+        }
+        
+        doSend(message) {
+            try {
+                this.socket.send(JSON.stringify(message));
+                return true;
+            } catch (e) {
+                console.error('Error sending WebSocket message:', e);
+                return false;
+            }
+        }
+        
+        on(event, callback) {
+            if (!this.eventListeners[event]) {
+                this.eventListeners[event] = [];
+            }
+            this.eventListeners[event].push(callback);
+        }
+        
+        off(event, callback) {
+            if (!this.eventListeners[event]) return;
+            this.eventListeners[event] = this.eventListeners[event].filter(cb => cb !== callback);
+        }
+        
+        emit(event, data) {
+            if (!this.eventListeners[event]) return;
+            this.eventListeners[event].forEach(callback => {
+                try {
+                    callback(data);
+                } catch (e) {
+                    console.error(`Error in event listener for ${event}:`, e);
+                }
+            });
+        }
+    }
+    
+    // Initialize the client
+    const client = new BetterTeamsDirectClient();
+    
+    // Setup basic event handlers
+    client.on('reinject_required', () => {
+        console.log('Server requested reinjection - this may cause the page to reload');
+    });
+    
+    client.on('error', (data) => {
+        console.error('Server error:', data.message);
+    });
+    
+    // Send a ping every 30 seconds to keep the connection alive
+    setInterval(() => {
+        if (client.connected) {
+            client.send('ping');
+        }
+    }, 30000);
+    
+    // Listen for plugin registration requests (compatibility with existing plugins)
+    document.addEventListener('betterteams:request-websocket', (event) => {
+        if (event.detail && event.detail.plugin) {
+            window.BetterTeamsWS.registerPlugin(
+                event.detail.plugin,
+                event.detail.features || []
+            );
+        }
+    });
+    
+    console.log('WebSocket Client plugin initialized');
 })();
