@@ -33,7 +33,7 @@ namespace BetterTeams
         public string DownloadUrl { get; set; } = string.Empty;
         
         [JsonIgnore]
-        public bool IsActive { get; set; } = true;
+        public bool IsActive { get; set; } = false;
     }
 
     public class PluginManager

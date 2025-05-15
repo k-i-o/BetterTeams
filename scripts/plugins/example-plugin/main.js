@@ -18,18 +18,15 @@
     }
     
     function addBadgesToTeams() {
-        const teamsList = document.querySelectorAll('.fui-Tree.rnv2ez3.___tq7j3z0.f1ywm7hm.f1c88k3p.f1tqdzup');
-        teamsList.forEach(team => {
-            if (!team.querySelector('.example-plugin-badge')) {
-                const teamName = team.querySelector('[id^="title-chat-list-item"]');
-                if (teamName) {
-                    const badge = document.createElement('span');
-                    badge.className = 'example-plugin-badge';
-                    badge.textContent = 'Enhanced';
-                    teamName.appendChild(badge);
-                }
+        if (!document.querySelector('.example-plugin-badge')) {
+            const teamName = team.querySelector('[id^="title-chat-list-item"]');
+            if (teamName) {
+                const badge = document.createElement('span');
+                badge.className = 'example-plugin-badge';
+                badge.textContent = 'Enhanced';
+                teamName.appendChild(badge);
             }
-        });
+        }
     }
     
     function observeTeamsList() {

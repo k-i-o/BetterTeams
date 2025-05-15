@@ -2,6 +2,7 @@
 {
     public class InjectorConfig
     {
+        public bool FirstTime = true;
         public string TeamsExePath { get; set; } = string.Empty;
         public int RemoteDebuggingPort { get; set; } = 9222;
         public bool EnableLogging { get; set; } = true;

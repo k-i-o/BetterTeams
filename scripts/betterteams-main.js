@@ -118,24 +118,14 @@
                 return;
             }
             
-            // Create the global API object
             window.BetterTeamsWS = {
-                // Connection state
                 isConnected: () => this.connected,
-                
-                // Core methods
                 send: (action, data = {}) => this.send(action, data),
-                
-                // Event handling
                 on: (event, callback) => this.on(event, callback),
                 off: (event, callback) => this.off(event, callback),
-                
-                // Helpers for plugins
                 copyToClipboard: (url, type = "text") => {
                     return this.send("copyToClipboard", { url, type });
                 },
-                
-                // Plugin registration
                 registerPlugin: (pluginId, features = []) => {
                     console.log(`Plugin ${pluginId} registered for WebSocket access`);
                     document.dispatchEvent(new CustomEvent('betterteams:websocket-ready', {
@@ -265,10 +255,8 @@
         }
     }
     
-    // Initialize the client
     const client = new BetterTeamsDirectClient();
     
-    // Setup basic event handlers
     client.on('reinject_required', () => {
         console.log('Server requested reinjection - this may cause the page to reload');
     });
@@ -277,22 +265,15 @@
         console.error('Server error:', data.message);
     });
     
-    // Send a ping every 30 seconds to keep the connection alive
+    client.on('active_theme', (data) => {
+        
+    });
+    
     setInterval(() => {
         if (client.connected) {
             client.send('ping');
         }
     }, 30000);
-    
-    // Listen for plugin registration requests (compatibility with existing plugins)
-    document.addEventListener('betterteams:request-websocket', (event) => {
-        if (event.detail && event.detail.plugin) {
-            window.BetterTeamsWS.registerPlugin(
-                event.detail.plugin,
-                event.detail.features || []
-            );
-        }
-    });
-    
+        
     console.log('WebSocket Client plugin initialized');
 })();

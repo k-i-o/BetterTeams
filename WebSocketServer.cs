@@ -10,12 +10,11 @@ namespace BetterTeams
     public class WebSocketMessage
     {
         public string Action { get; set; } = string.Empty;
-        public Dictionary<string, object> Data { get; set; } = new Dictionary<string, object>();
+        public Dictionary<string, object> Data { get; set; } = [];
     }
 
     public class WebSocketServer
     {
-        // Windows API for clipboard operations
         [DllImport("user32.dll")]
         static extern bool OpenClipboard(IntPtr hWndNewOwner);
         
@@ -33,15 +32,10 @@ namespace BetterTeams
         
         [DllImport("gdi32.dll")]
         static extern bool DeleteEnhMetaFile(IntPtr hemf);
-        
-        // Clipboard format constants
-        const uint CF_BITMAP = 2;
-        const uint CF_DIB = 8;
-        const uint CF_ENHMETAFILE = 14;
-        
+                
         private HttpListener _listener;
-        private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
-        private readonly List<WebSocket> _clients = new List<WebSocket>();
+        private readonly CancellationTokenSource _cancellationTokenSource = new();
+        private readonly List<WebSocket> _clients = [];
         private readonly PluginManager _pluginManager;
         private readonly InjectorConfig _config;
         private readonly int _port;
@@ -130,7 +124,10 @@ namespace BetterTeams
                 while (!receiveResult.CloseStatus.HasValue)
                 {
                     string receivedMessage = Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
-                    Log.Info($"Received message: {receivedMessage}");
+                    if(!receivedMessage.Contains("ping"))
+                    {
+                        Log.Info($"Received message: {receivedMessage}");
+                    }
                     await HandleWebSocketMessage(receivedMessage, webSocket);
 
                     Array.Clear(buffer, 0, buffer.Length);
@@ -164,22 +161,17 @@ namespace BetterTeams
                 if (root.TryGetProperty("action", out var actionElement))
                 {
                     string action = actionElement.GetString() ?? string.Empty;
-                    Log.Info($"Processing action: {action}");
+                    if(!action.Equals("ping"))
+                    {
+                        Log.Info($"Processing action: {action}");
+                    }
                     
                     switch (action)
                     {
                         case "ping":
                             await SendResponse(socket, "pong", new { timestamp = DateTime.Now.ToString() });
                             break;
-                            
-                        case "test_call":
-                            string data = root.TryGetProperty("data", out var dataElement) 
-                                ? dataElement.GetString() ?? "no data" 
-                                : "no data";
-                            Log.Info($"Test call received with data: {data}");
-                            await SendResponse(socket, "test_response", new { message = $"Received: {data}", timestamp = DateTime.Now.ToString() });
-                            break;
-                            
+                                                        
                         case "get_plugins":
                             await SendAvailablePlugins(socket);
                             break;
@@ -442,7 +434,7 @@ namespace BetterTeams
                 var response = new WebSocketMessage {
                     Action = action,
                     Data = JsonSerializer.Deserialize<Dictionary<string, object>>(
-                        JsonSerializer.Serialize(data)) ?? new Dictionary<string, object>()
+                        JsonSerializer.Serialize(data)) ?? []
                 };
 
                 var responseJson = JsonSerializer.Serialize(response);
@@ -454,7 +446,10 @@ namespace BetterTeams
                     true,
                     _cancellationTokenSource.Token);
                     
-                Log.Info($"Sent response: {action}");
+                if(!action.Equals("pong"))
+                {
+                    Log.Info($"Sent response: {action}");
+                }
             }
             catch (Exception ex) {
                 Log.Error($"Error sending response: {ex.Message}");

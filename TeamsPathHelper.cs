@@ -6,85 +6,43 @@ using System.Text.Json;
 
 namespace BetterTeams
 {
-
     public static class TeamsPathHelper
     {
-        private static readonly string[] WellKnownPaths = new[]
-        {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "Teams", "current", "Teams.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft", "Teams", "current", "Teams.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft", "Teams", "current", "Teams.exe")
-        };
 
         public static void DiscoverTeamsPathIfMissing(InjectorConfig config)
         {
             if (!string.IsNullOrEmpty(config.TeamsExePath) && File.Exists(config.TeamsExePath))
             {
-                TryEnableDevMenu(config.TeamsExePath);
+                TryEnableDevMenu(config.TeamsExePath, config);
                 return;
             }
 
-            //foreach (string candidate in WellKnownPaths)
+            //string windowsApps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps");
+            //try
             //{
-            //    if (File.Exists(candidate))
+            //    PrivilegeHelper.EnableTakeOwnership();
+            //    Log.Info("Privilege SeTakeOwnership enabled before scanning WindowsApps");
+
+            //    if (Directory.Exists(windowsApps))
             //    {
-            //        config.TeamsExePath = candidate;
-            //        Log.Success($"Discovered Teams path: {candidate}");
-            //        TryEnableDevMenu(candidate);
-            //        return;
+            //        string[] dirs = Directory.GetDirectories(windowsApps, "MSTeams_*", SearchOption.TopDirectoryOnly);
+            //        foreach (var dir in dirs)
+            //        {
+            //            string exe = Path.Combine(dir, "ms-teams.exe");
+            //            if (File.Exists(exe))
+            //            {
+            //                config.TeamsExePath = exe;
+            //                Log.Success($"Discovered Teams path in WindowsApps: {exe}");
+            //                TryEnableDevMenu(dir, config);
+            //                return;
+            //            }
+            //        }
             //    }
             //}
-
-            string windowsApps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps");
-            try
-            {
-                PrivilegeHelper.EnableTakeOwnership();
-                Log.Info("Privilege SeTakeOwnership enabled before scanning WindowsApps");
-
-                if (Directory.Exists(windowsApps))
-                {
-                    string[] dirs = Directory.GetDirectories(windowsApps, "MSTeams_*", SearchOption.TopDirectoryOnly);
-                    foreach (var dir in dirs)
-                    {
-                        string exe = Path.Combine(dir, "ms-teams.exe");
-                        if (File.Exists(exe))
-                        {
-                            config.TeamsExePath = exe;
-                            Log.Success($"Discovered Teams path in WindowsApps: {exe}");
-                            TryEnableDevMenu(dir);
-                            return;
-                        }
-                    }
-                }
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                Log.Warning($"Cannot access WindowsApps folder: {ex.Message}");
-            }
-
-
-            try
-            {
-                using (RegistryKey? key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Office\Teams"))
-                {
-                    string? installPath = key?.GetValue("InstallPath") as string;
-                    if (!string.IsNullOrEmpty(installPath))
-                    {
-                        string exe = Path.Combine(installPath, "ms-teams.exe");
-                        if (File.Exists(exe))
-                        {
-                            config.TeamsExePath = exe;
-                            Log.Success($"Discovered Teams path via registry: {exe}");
-                            TryEnableDevMenu(installPath);
-                            return;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warning($"Registry lookup failed: {ex.Message}");
-            }
+            //catch (UnauthorizedAccessException ex)
+            //{
+            //    Log.Warning($"Cannot access WindowsApps folder: {ex.Message}");
+            //}
 
             Log.Info("Enter full path to ms-teams.exe:");
             string input = Console.ReadLine() ?? string.Empty;
@@ -92,7 +50,7 @@ namespace BetterTeams
             {
                 config.TeamsExePath = input;
                 Log.Success($"Set Teams path from user input: {input}");
-                TryEnableDevMenu(Path.GetDirectoryName(input)!);
+                TryEnableDevMenu(Path.GetDirectoryName(input), config);
             }
             else
             {
@@ -114,8 +72,11 @@ namespace BetterTeams
             return null;
         }
 
-        private static void TryEnableDevMenu(string exe)
+        private static void TryEnableDevMenu(string? exe, InjectorConfig config)
         {
+            return;
+            if (!config.FirstTime || string.IsNullOrEmpty(exe)) return;
+
             string? installFolder = GetInstallFolder(exe);
             if (string.IsNullOrEmpty(installFolder)) throw new Exception("Failed to get install folder");
 
@@ -136,12 +97,10 @@ namespace BetterTeams
                 var fileInfo = new FileInfo(configJson);
                 var security = fileInfo.GetAccessControl(AccessControlSections.All);
 
-                var adminsSid = new SecurityIdentifier(
-                    WellKnownSidType.BuiltinAdministratorsSid, null);
+                var adminsSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
                 security.SetOwner(adminsSid);
 
-                var currentUser = new NTAccount(
-                    Environment.UserDomainName + "\\" + Environment.UserName)
+                var currentUser = new NTAccount(Environment.UserDomainName + "\\" + Environment.UserName)
                     .Translate(typeof(SecurityIdentifier)) as SecurityIdentifier;
 
                 var rule = new FileSystemAccessRule(
