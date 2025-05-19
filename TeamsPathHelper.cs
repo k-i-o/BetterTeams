@@ -17,32 +17,32 @@ namespace BetterTeams
                 return;
             }
 
-            //string windowsApps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps");
-            //try
-            //{
-            //    PrivilegeHelper.EnableTakeOwnership();
-            //    Log.Info("Privilege SeTakeOwnership enabled before scanning WindowsApps");
+            string windowsApps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps");
+            try
+            {
+                PrivilegeHelper.EnableTakeOwnership();
+                Log.Info("Privilege SeTakeOwnership enabled before scanning WindowsApps");
 
-            //    if (Directory.Exists(windowsApps))
-            //    {
-            //        string[] dirs = Directory.GetDirectories(windowsApps, "MSTeams_*", SearchOption.TopDirectoryOnly);
-            //        foreach (var dir in dirs)
-            //        {
-            //            string exe = Path.Combine(dir, "ms-teams.exe");
-            //            if (File.Exists(exe))
-            //            {
-            //                config.TeamsExePath = exe;
-            //                Log.Success($"Discovered Teams path in WindowsApps: {exe}");
-            //                TryEnableDevMenu(dir, config);
-            //                return;
-            //            }
-            //        }
-            //    }
-            //}
-            //catch (UnauthorizedAccessException ex)
-            //{
-            //    Log.Warning($"Cannot access WindowsApps folder: {ex.Message}");
-            //}
+                if (Directory.Exists(windowsApps))
+                {
+                    string[] dirs = Directory.GetDirectories(windowsApps, "MSTeams_*", SearchOption.TopDirectoryOnly);
+                    foreach (var dir in dirs)
+                    {
+                        string exe = Path.Combine(dir, "ms-teams.exe");
+                        if (File.Exists(exe))
+                        {
+                            config.TeamsExePath = exe;
+                            Log.Success($"Discovered Teams path in WindowsApps: {exe}");
+                            TryEnableDevMenu(dir, config);
+                            return;
+                        }
+                    }
+                }
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Log.Warning($"Cannot access WindowsApps folder: {ex.Message}");
+            }
 
             Log.Info("Enter full path to ms-teams.exe:");
             string input = Console.ReadLine() ?? string.Empty;

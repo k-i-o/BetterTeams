@@ -79,13 +79,14 @@ namespace MsTeamsInjector
                         Console.WriteLine("  help - Show this help message");
                         Console.WriteLine("  reinject - Reinject scripts into all pages");
                         Console.WriteLine("  restart - Restart teams reinjecting all");
+                        Console.WriteLine("  marketplace - List plugins and themes from marketplace");
                         Console.WriteLine("  plugins - List installed plugins");
-                        Console.WriteLine("  themes - List installed themes");
                         Console.WriteLine("  install_plugin <id> - Install a plugin");
-                        Console.WriteLine("  install_theme <id> - Install a theme");
                         Console.WriteLine("  uninstall_plugin <id> - Uninstall a plugin");
-                        Console.WriteLine("  uninstall_theme <id> - Uninstall a theme");
                         Console.WriteLine("  activate_plugin <id> - Activate a plugin");
+                        Console.WriteLine("  themes - List installed themes");
+                        Console.WriteLine("  install_theme <id> - Install a theme");
+                        Console.WriteLine("  uninstall_theme <id> - Uninstall a theme");
                         Console.WriteLine("  deactivate_plugin <id> - Deactivate a plugin");
                         Console.WriteLine("  activate_theme <id> - Activate a theme");
                         Console.WriteLine("  deactivate_theme - Deactivate the current theme");
@@ -108,6 +109,35 @@ namespace MsTeamsInjector
                         break;
                     case "launch":
                         LaunchTeams();
+                        break;
+                    case "marketplace":
+                        var plugins = await _pluginManager.GetAvailablePlugins();
+                        if (plugins.Count == 0)
+                        {
+                            Log.Info("No plugins found in the marketplace.");
+                        }
+                        else
+                        {
+                            Log.Info("Marketplace Plugins:");
+                            foreach (var plugin in plugins)
+                            {
+                                Log.Info($"  [{plugin.Id}] {plugin.Name} v{plugin.Version} - {plugin.Description}");
+                            }
+                        }
+
+                        var themes = await _pluginManager.GetAvailableThemes();
+                        if (themes.Count == 0)
+                        {
+                            Log.Info("No themes found in the marketplace.");
+                        }
+                        else
+                        {
+                            Log.Info("Marketplace Themes:");
+                            foreach (var theme in themes)
+                            {
+                                Log.Info($"  [{theme.Id}] {theme.Name} v{theme.Version} - {theme.Description}");
+                            }
+                        }
                         break;
                     case "plugins":
                         ListInstalledPlugins();
@@ -411,7 +441,7 @@ namespace MsTeamsInjector
             
             try
             {
-                var options = new JsonSerializerOptions
+                JsonSerializerOptions options = new()
                 {
                     WriteIndented = true
                 };
@@ -508,7 +538,7 @@ namespace MsTeamsInjector
             }
         }
 
-        static int iPages = 0;
+        static int iPages;
         private static async Task InjectScriptsIntoAllPages()
         {
             IPlaywright playwright = await Playwright.CreateAsync();
@@ -521,8 +551,8 @@ namespace MsTeamsInjector
             string root = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _config.ScriptsDirectory);
             string mainScript = Path.Combine(root, "betterteams-main.js");
 
-            List<PluginInfo> installedPlugins = _pluginManager.GetInstalledPlugins();
-            PluginInfo? activeTheme = _pluginManager.GetInstalledThemes().Where(t => t.Id.Equals(_config.ActiveThemeId, StringComparison.InvariantCultureIgnoreCase)).FirstOrDefault();
+            List<AddonInfo> installedPlugins = _pluginManager.GetInstalledPlugins();
+            AddonInfo? activeTheme = _pluginManager.GetInstalledThemes().Where(t => t.Id.Equals(_config.ActiveThemeId, StringComparison.InvariantCultureIgnoreCase)).FirstOrDefault();
             foreach (IPage page in pagesSnapshot)
             {
                 await InjectMainAndExtensionsAsync(page, mainScript, installedPlugins, activeTheme, root);
@@ -532,7 +562,7 @@ namespace MsTeamsInjector
             await browser.CloseAsync();
         }
 
-        private static async Task InjectMainAndExtensionsAsync(IPage page, string mainScriptPath, List<PluginInfo> plugins, PluginInfo? activeTheme, string rootScriptsDir)
+        private static async Task InjectMainAndExtensionsAsync(IPage page, string mainScriptPath, List<AddonInfo> plugins, AddonInfo? activeTheme, string rootScriptsDir)
         {
             if (!File.Exists(mainScriptPath))
             {
@@ -556,7 +586,7 @@ namespace MsTeamsInjector
                 }
             }
 
-            foreach (PluginInfo? plugin in plugins.Where(p => p.IsActive))
+            foreach (AddonInfo? plugin in plugins.Where(p => p.IsActive))
             {
                 string pluginDir = Path.Combine(rootScriptsDir, "plugins", plugin.Id);
                 string mainJsPath = Path.Combine(pluginDir, "main.js");

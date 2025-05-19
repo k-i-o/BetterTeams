@@ -147,7 +147,7 @@ namespace BetterTeams
                         await webSocket.CloseAsync(WebSocketCloseStatus.InternalServerError, 
                             "Error processing messages", _cancellationTokenSource.Token);
                     }
-                } catch { /* ignore errors during close */ }
+                } catch { }
             }
         }
 
@@ -294,7 +294,7 @@ namespace BetterTeams
                 Log.Error($"Error handling WebSocket message: {ex.Message}");
                 try {
                     await SendResponse(socket, "error", new { message = $"Server error: {ex.Message}" });
-                } catch { /* ignore errors during error response */ }
+                } catch { }
             }
         }
 
@@ -307,11 +307,9 @@ namespace BetterTeams
                 
                 if (theme != null)
                 {
-                    // Save the active theme in config
                     _config.ActiveThemeId = themeId;
                     SaveConfig();
                     
-                    // Notify all clients about theme change
                     await BroadcastMessage("theme_activated", new { ThemeId = themeId, ThemeName = theme.Name });
                     
                     Log.Success($"Theme {theme.Name} activated");
@@ -334,11 +332,9 @@ namespace BetterTeams
         {
             try
             {
-                // Clear the active theme in config
                 _config.ActiveThemeId = string.Empty;
                 SaveConfig();
                 
-                // Notify all clients about theme deactivation
                 await BroadcastMessage("theme_deactivated", new { });
                 
                 Log.Success("Theme deactivated");
@@ -366,7 +362,6 @@ namespace BetterTeams
                     }
                     else
                     {
-                        // Theme ID in config doesn't match any installed theme
                         _config.ActiveThemeId = string.Empty;
                         SaveConfig();
                         await SendResponse(webSocket, "active_theme", new { ThemeId = string.Empty });
@@ -504,7 +499,6 @@ namespace BetterTeams
 
         public async Task BroadcastReinjectMessage(int delayMs)
         {
-            // Give the client time to receive the response before reinjecting
             if (delayMs > 0) {
                 await Task.Delay(delayMs);
             }
@@ -548,23 +542,19 @@ namespace BetterTeams
                     {
                         Log.Info($"Copying GIF from URL to clipboard: {url}");
                         
-                        // Download the GIF
-                        using (HttpClient client = new HttpClient())
+                        using (HttpClient client = new())
                         {
                             var response = await client.GetAsync(url);
                             if (response.IsSuccessStatusCode)
                             {
                                 var imageBytes = await response.Content.ReadAsByteArrayAsync();
                                 
-                                // Save to temporary file and copy to clipboard
                                 string tempFilePath = Path.Combine(Path.GetTempPath(), $"betterteams_gif_{Guid.NewGuid()}.gif");
                                 try
                                 {
-                                    // Save the GIF to a temporary file
                                     File.WriteAllBytes(tempFilePath, imageBytes);
                                     Log.Info($"GIF saved to temporary file: {tempFilePath}");
                                     
-                                    // Use PowerShell to copy the image to clipboard
                                     string psCommand = $"Add-Type -AssemblyName System.Windows.Forms; " +
                                                       $"[System.Windows.Forms.Clipboard]::SetImage([System.Drawing.Image]::FromFile('{tempFilePath}'))";
                                     
@@ -591,7 +581,6 @@ namespace BetterTeams
                                         }
                                     }
                                     
-                                    // Broadcast success message to clients
                                     await BroadcastMessage("clipboard_updated", new { Success = true, Message = "GIF copied to clipboard" });
                                 }
                                 catch (Exception ex)
@@ -600,7 +589,6 @@ namespace BetterTeams
                                 }
                                 finally
                                 {
-                                    // Clean up the temporary file
                                     try
                                     {
                                         if (File.Exists(tempFilePath))

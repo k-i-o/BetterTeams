@@ -1,15 +1,10 @@
 using BetterTeams.Configs;
-using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.IO;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System;
 
 namespace BetterTeams
 {
-    public class PluginInfo
+    public class AddonInfo
     {
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
@@ -29,18 +24,17 @@ namespace BetterTeams
         [JsonPropertyName("repository")]
         public string Repository { get; set; } = string.Empty;
         
-        [JsonPropertyName("downloadUrl")]
-        public string DownloadUrl { get; set; } = string.Empty;
-        
         [JsonIgnore]
         public bool IsActive { get; set; } = false;
     }
 
     public class PluginManager
     {
-        private const string PluginsApiUrl = "https://api.kiocode.com/api/betterteams/plugins";
-        private const string ThemesApiUrl = "https://api.kiocode.com/api/betterteams/themes";
-        private static HttpClient _httpClient = new HttpClient();
+        //private const string PluginsApiUrl = "https://api.kiocode.com/api/betterteams/plugins";
+        //private const string ThemesApiUrl = "https://api.kiocode.com/api/betterteams/themes";
+        private const string PluginsApiUrl = "https://localhost:7170/api/betterteams/plugins";
+        private const string ThemesApiUrl = "https://localhost:7170/api/betterteams/themes";
+        private static HttpClient _httpClient = new();
         private readonly string _pluginsDirectory;
         private readonly string _themesDirectory;
         private readonly JsonSerializerOptions _jsonOptions;
@@ -55,7 +49,6 @@ namespace BetterTeams
             Directory.CreateDirectory(_pluginsDirectory);
             Directory.CreateDirectory(_themesDirectory);
             
-            // Configure JSON options to be case-insensitive
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
@@ -63,36 +56,35 @@ namespace BetterTeams
             };
         }
         
-        // Backward compatibility constructor
         public PluginManager(string scriptsDirectory) : this(scriptsDirectory, new PluginConfig())
         {
         }
 
-        public async Task<List<PluginInfo>> GetAvailablePlugins()
+        public async Task<List<AddonInfo>> GetAvailablePlugins()
         {
             try
             {
                 var response = await _httpClient.GetStringAsync(PluginsApiUrl);
-                return JsonSerializer.Deserialize<List<PluginInfo>>(response, _jsonOptions) ?? new List<PluginInfo>();
+                return JsonSerializer.Deserialize<List<AddonInfo>>(response, _jsonOptions) ?? [];
             }
             catch (Exception ex)
             {
                 Log.Error($"Error fetching available plugins: {ex.Message}");
-                return new List<PluginInfo>();
+                return new List<AddonInfo>();
             }
         }
 
-        public async Task<List<PluginInfo>> GetAvailableThemes()
+        public async Task<List<AddonInfo>> GetAvailableThemes()
         {
             try
             {
                 var response = await _httpClient.GetStringAsync(ThemesApiUrl);
-                return JsonSerializer.Deserialize<List<PluginInfo>>(response, _jsonOptions) ?? new List<PluginInfo>();
+                return JsonSerializer.Deserialize<List<AddonInfo>>(response, _jsonOptions) ?? [];
             }
             catch (Exception ex)
             {
                 Log.Error($"Error fetching available themes: {ex.Message}");
-                return new List<PluginInfo>();
+                return new List<AddonInfo>();
             }
         }
 
@@ -116,9 +108,9 @@ namespace BetterTeams
             [JsonPropertyName("repository")]
             public string? Repository { get; set; }
             
-            public PluginInfo ToPluginInfo(string pluginFolderName)
+            public AddonInfo ToPluginInfo(string pluginFolderName)
             {
-                return new PluginInfo
+                return new AddonInfo
                 {
                     Id = string.IsNullOrEmpty(Id) ? GeneratePluginId(Name, pluginFolderName) : Id,
                     Name = Name ?? "Unknown Plugin",
@@ -143,9 +135,9 @@ namespace BetterTeams
             }
         }
 
-        public List<PluginInfo> GetInstalledPlugins()
+        public List<AddonInfo> GetInstalledPlugins()
         {
-            var plugins = new List<PluginInfo>();
+            var plugins = new List<AddonInfo>();
             foreach (var pluginDir in Directory.GetDirectories(_pluginsDirectory))
             {
                 var dirInfo = new DirectoryInfo(pluginDir);
@@ -186,9 +178,9 @@ namespace BetterTeams
             return plugins;
         }
 
-        public List<PluginInfo> GetInstalledThemes()
+        public List<AddonInfo> GetInstalledThemes()
         {
-            var themes = new List<PluginInfo>();
+            var themes = new List<AddonInfo>();
             foreach (var themeDir in Directory.GetDirectories(_themesDirectory))
             {
                 var dirInfo = new DirectoryInfo(themeDir);
@@ -265,19 +257,19 @@ namespace BetterTeams
                 var pluginDir = Path.Combine(_pluginsDirectory, pluginId);
                 Directory.CreateDirectory(pluginDir);
 
-                // Download the plugin package
-                var zipPath = Path.Combine(Path.GetTempPath(), $"{pluginId}.zip");
-                using (var response = await _httpClient.GetAsync(plugin.DownloadUrl))
-                {
-                    using (var fs = new FileStream(zipPath, FileMode.Create))
-                    {
-                        await response.Content.CopyToAsync(fs);
-                    }
-                }
+                //// Download the plugin package
+                //var zipPath = Path.Combine(Path.GetTempPath(), $"{pluginId}.zip");
+                //using (var response = await _httpClient.GetAsync(plugin.DownloadUrl))
+                //{
+                //    using (var fs = new FileStream(zipPath, FileMode.Create))
+                //    {
+                //        await response.Content.CopyToAsync(fs);
+                //    }
+                //}
 
-                // Extract the package
-                System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, pluginDir, true);
-                File.Delete(zipPath);
+                //// Extract the package
+                //System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, pluginDir, true);
+                //File.Delete(zipPath);
 
                 Log.Success($"Plugin {plugin.Name} installed successfully");
                 return true;
@@ -304,19 +296,19 @@ namespace BetterTeams
                 var themeDir = Path.Combine(_themesDirectory, themeId);
                 Directory.CreateDirectory(themeDir);
 
-                // Download the theme package
-                var zipPath = Path.Combine(Path.GetTempPath(), $"{themeId}.zip");
-                using (var response = await _httpClient.GetAsync(theme.DownloadUrl))
-                {
-                    using (var fs = new FileStream(zipPath, FileMode.Create))
-                    {
-                        await response.Content.CopyToAsync(fs);
-                    }
-                }
+                //// Download the theme package
+                //var zipPath = Path.Combine(Path.GetTempPath(), $"{themeId}.zip");
+                //using (var response = await _httpClient.GetAsync(theme.DownloadUrl))
+                //{
+                //    using (var fs = new FileStream(zipPath, FileMode.Create))
+                //    {
+                //        await response.Content.CopyToAsync(fs);
+                //    }
+                //}
 
-                // Extract the package
-                System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, themeDir, true);
-                File.Delete(zipPath);
+                //// Extract the package
+                //System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, themeDir, true);
+                //File.Delete(zipPath);
 
                 Log.Success($"Theme {theme.Name} installed successfully");
                 return true;
@@ -424,7 +416,7 @@ namespace BetterTeams
             }
         }
 
-        public List<PluginInfo> GetActivePlugins()
+        public List<AddonInfo> GetActivePlugins()
         {
             var plugins = GetInstalledPlugins();
             return plugins.FindAll(p => p.IsActive);

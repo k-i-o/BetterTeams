@@ -1,9 +1,0 @@
-{
-  "id": "example-plugin",
-  "name": "Example Plugin",
-  "description": "A simple example plugin to demonstrate the BetterTeams plugin structure",
-  "version": "1.0.0",
-  "author": "BetterTeams",
-  "repository": "https://github.com/username/example-plugin",
-  "main": "main.js"
-} 
