@@ -1,8 +1,0 @@
-{
-  "id": "tenor-gifs",
-  "name": "Tenor Gifs",
-  "description": "Adds a button to the message input to search for gifs using Tenor",
-  "version": "1.0.0",
-  "author": "BetterTeams",
-  "repository": "https://github.com/k-i-o/betterteams-tenor-gifs-plugin"
-} 

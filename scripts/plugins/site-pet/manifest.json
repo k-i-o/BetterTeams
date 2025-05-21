@@ -1,8 +1,0 @@
-{
-    "id": "site-pet",
-    "name": "Site Pet",
-    "description": "Adds a small animated pet that roams around your Teams client",
-    "version": "1.0.0",
-    "author": "BetterTeams",
-    "repository": "https://github.com/derDere/site-pet"
-} 

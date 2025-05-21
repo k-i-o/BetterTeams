@@ -1,37 +1,10 @@
 using BetterTeams.Configs;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace BetterTeams
 {
-    public class AddonInfo
-    {
-        [JsonPropertyName("id")]
-        public string Id { get; set; } = string.Empty;
-        
-        [JsonPropertyName("name")]
-        public string Name { get; set; } = string.Empty;
-        
-        [JsonPropertyName("description")]
-        public string Description { get; set; } = string.Empty;
-        
-        [JsonPropertyName("version")]
-        public string Version { get; set; } = string.Empty;
-        
-        [JsonPropertyName("author")]
-        public string Author { get; set; } = string.Empty;
-        
-        [JsonPropertyName("repository")]
-        public string Repository { get; set; } = string.Empty;
-        
-        [JsonIgnore]
-        public bool IsActive { get; set; } = false;
-    }
-
     public class PluginManager
     {
-        //private const string PluginsApiUrl = "https://api.kiocode.com/api/betterteams/plugins";
-        //private const string ThemesApiUrl = "https://api.kiocode.com/api/betterteams/themes";
         private const string PluginsApiUrl = "https://localhost:7170/api/betterteams/plugins";
         private const string ThemesApiUrl = "https://localhost:7170/api/betterteams/themes";
         private static HttpClient _httpClient = new();
@@ -45,94 +18,15 @@ namespace BetterTeams
             _pluginsDirectory = Path.Combine(scriptsDirectory, "plugins");
             _themesDirectory = Path.Combine(scriptsDirectory, "themes");
             _pluginConfig = pluginConfig ?? new PluginConfig();
-            
+
             Directory.CreateDirectory(_pluginsDirectory);
             Directory.CreateDirectory(_themesDirectory);
-            
+
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
                 WriteIndented = true
             };
-        }
-        
-        public PluginManager(string scriptsDirectory) : this(scriptsDirectory, new PluginConfig())
-        {
-        }
-
-        public async Task<List<AddonInfo>> GetAvailablePlugins()
-        {
-            try
-            {
-                var response = await _httpClient.GetStringAsync(PluginsApiUrl);
-                return JsonSerializer.Deserialize<List<AddonInfo>>(response, _jsonOptions) ?? [];
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error fetching available plugins: {ex.Message}");
-                return new List<AddonInfo>();
-            }
-        }
-
-        public async Task<List<AddonInfo>> GetAvailableThemes()
-        {
-            try
-            {
-                var response = await _httpClient.GetStringAsync(ThemesApiUrl);
-                return JsonSerializer.Deserialize<List<AddonInfo>>(response, _jsonOptions) ?? [];
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error fetching available themes: {ex.Message}");
-                return new List<AddonInfo>();
-            }
-        }
-
-        private class PluginManifest
-        {
-            [JsonPropertyName("id")]
-            public string? Id { get; set; }
-            
-            [JsonPropertyName("name")]
-            public string? Name { get; set; }
-            
-            [JsonPropertyName("description")]
-            public string? Description { get; set; }
-            
-            [JsonPropertyName("version")]
-            public string? Version { get; set; }
-            
-            [JsonPropertyName("author")]
-            public string? Author { get; set; }
-            
-            [JsonPropertyName("repository")]
-            public string? Repository { get; set; }
-            
-            public AddonInfo ToPluginInfo(string pluginFolderName)
-            {
-                return new AddonInfo
-                {
-                    Id = string.IsNullOrEmpty(Id) ? GeneratePluginId(Name, pluginFolderName) : Id,
-                    Name = Name ?? "Unknown Plugin",
-                    Description = Description ?? "",
-                    Version = Version ?? "1.0.0",
-                    Author = Author ?? "Unknown Author",
-                    Repository = Repository ?? ""
-                };
-            }
-            
-            private string GeneratePluginId(string? name, string folderName)
-            {
-                string baseString = (name ?? "unknown") + "-" + folderName;
-                
-                using (var md5 = System.Security.Cryptography.MD5.Create())
-                {
-                    byte[] inputBytes = System.Text.Encoding.UTF8.GetBytes(baseString);
-                    byte[] hashBytes = md5.ComputeHash(inputBytes);
-                    
-                    return new Guid(hashBytes).ToString();
-                }
-            }
         }
 
         public List<AddonInfo> GetInstalledPlugins()
@@ -142,27 +36,28 @@ namespace BetterTeams
             {
                 var dirInfo = new DirectoryInfo(pluginDir);
                 var pluginFolderName = dirInfo.Name;
-                
+
                 var manifestPath = Path.Combine(pluginDir, "manifest.json");
                 if (File.Exists(manifestPath))
                 {
                     try
                     {
                         var json = File.ReadAllText(manifestPath);
-                        
-                        PluginManifest? manifest = JsonSerializer.Deserialize<PluginManifest>(json, _jsonOptions);
-                        
+
+                        ManifestInfo? manifest = JsonSerializer.Deserialize<ManifestInfo>(json, _jsonOptions);
+
                         if (manifest != null)
                         {
-                            var plugin = manifest.ToPluginInfo(pluginFolderName);
+                            var plugin = manifest.ToAddonInfo(pluginFolderName);
                             plugin.IsActive = _pluginConfig.IsPluginActive(plugin.Id);
                             plugins.Add(plugin);
-                            
+
                             if (string.IsNullOrEmpty(manifest.Id))
                             {
                                 Log.Success($"Generated ID {plugin.Id} for plugin {plugin.Name}");
                                 UpdateManifestWithId(manifestPath, plugin.Id);
-                            } else
+                            }
+                            else
                             {
                                 Log.Success($"Plugin {plugin.Name} loaded");
                             }
@@ -185,19 +80,19 @@ namespace BetterTeams
             {
                 var dirInfo = new DirectoryInfo(themeDir);
                 var themeFolderName = dirInfo.Name;
-                
+
                 var manifestPath = Path.Combine(themeDir, "manifest.json");
                 if (File.Exists(manifestPath))
                 {
                     try
                     {
                         var json = File.ReadAllText(manifestPath);
-                        var manifest = JsonSerializer.Deserialize<PluginManifest>(json, _jsonOptions);
+                        var manifest = JsonSerializer.Deserialize<ManifestInfo>(json, _jsonOptions);
                         if (manifest != null)
                         {
-                            var theme = manifest.ToPluginInfo(themeFolderName);
+                            var theme = manifest.ToAddonInfo(themeFolderName);
                             themes.Add(theme);
-                            
+
                             if (string.IsNullOrEmpty(manifest.Id))
                             {
                                 Log.Info($"Generated ID {theme.Id} for theme {theme.Name}");
@@ -213,20 +108,18 @@ namespace BetterTeams
             }
             return themes;
         }
-        
+
         private void UpdateManifestWithId(string manifestPath, string id)
         {
             try
             {
                 var json = File.ReadAllText(manifestPath);
-                
-                // Parse to JsonDocument to manipulate the JSON
+
                 using (JsonDocument doc = JsonDocument.Parse(json))
                 {
                     var newJson = JsonSerializer.Serialize(
                         JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, _jsonOptions), _jsonOptions);
-                    
-                    // Add the ID to the deserialized dictionary and reserialize
+
                     var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(newJson, _jsonOptions);
                     if (dict != null)
                     {
@@ -242,184 +135,133 @@ namespace BetterTeams
             }
         }
 
-        public async Task<bool> InstallPlugin(string pluginId)
+        public async Task<List<AddonInfo>> GetAvailablePlugins()
         {
             try
             {
-                var plugins = await GetAvailablePlugins();
-                var plugin = plugins.Find(p => p.Id == pluginId);
-                if (plugin == null)
-                {
-                    Log.Error($"Plugin {pluginId} not found");
-                    return false;
-                }
-
-                var pluginDir = Path.Combine(_pluginsDirectory, pluginId);
-                Directory.CreateDirectory(pluginDir);
-
-                //// Download the plugin package
-                //var zipPath = Path.Combine(Path.GetTempPath(), $"{pluginId}.zip");
-                //using (var response = await _httpClient.GetAsync(plugin.DownloadUrl))
-                //{
-                //    using (var fs = new FileStream(zipPath, FileMode.Create))
-                //    {
-                //        await response.Content.CopyToAsync(fs);
-                //    }
-                //}
-
-                //// Extract the package
-                //System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, pluginDir, true);
-                //File.Delete(zipPath);
-
-                Log.Success($"Plugin {plugin.Name} installed successfully");
-                return true;
+                var response = await _httpClient.GetStringAsync(PluginsApiUrl);
+                return JsonSerializer.Deserialize<List<AddonInfo>>(response, _jsonOptions) ?? new List<AddonInfo>();
             }
-            catch (Exception ex)
+            catch
             {
-                Log.Error($"Error installing plugin: {ex.Message}");
-                return false;
+                return new List<AddonInfo>();
             }
+        }
+
+        public async Task<List<AddonInfo>> GetAvailableThemes()
+        {
+            try
+            {
+                var response = await _httpClient.GetStringAsync(ThemesApiUrl);
+                return JsonSerializer.Deserialize<List<AddonInfo>>(response, _jsonOptions) ?? new List<AddonInfo>();
+            }
+            catch
+            {
+                return new List<AddonInfo>();
+            }
+        }
+
+        public async Task<bool> InstallPlugin(string pluginId)
+        {
+            const int MaxRetries = 2;
+            var plugins = await GetAvailablePlugins();
+            var plugin = plugins.Find(p => p.Id == pluginId);
+            if (plugin == null) return false;
+
+            var pluginDir = Path.Combine(_pluginsDirectory, pluginId);
+
+            for (int attempt = 1; attempt <= MaxRetries; attempt++)
+            {
+                try
+                {
+                    if (Directory.Exists(pluginDir))
+                        Directory.Delete(pluginDir, true);
+                    Directory.CreateDirectory(pluginDir);
+
+                    var manifestUrl = $"{PluginsApiUrl}/download/{pluginId}/manifest.json";
+                    var scriptUrl = $"{PluginsApiUrl}/download/{pluginId}/main.js";
+
+                    using (var ms = await _httpClient.GetStreamAsync(manifestUrl))
+                    using (var fs = new FileStream(Path.Combine(pluginDir, "manifest.json"), FileMode.Create))
+                        await ms.CopyToAsync(fs);
+
+                    using (var ss = await _httpClient.GetStreamAsync(scriptUrl))
+                    using (var fs = new FileStream(Path.Combine(pluginDir, $"main.js"), FileMode.Create))
+                        await ss.CopyToAsync(fs);
+
+                    return true;
+                }
+                catch when (attempt < MaxRetries)
+                {
+                    if (Directory.Exists(pluginDir))
+                        Directory.Delete(pluginDir, true);
+                }
+            }
+
+            return false;
         }
 
         public async Task<bool> InstallTheme(string themeId)
         {
-            try
-            {
-                var themes = await GetAvailableThemes();
-                var theme = themes.Find(t => t.Id == themeId);
-                if (theme == null)
-                {
-                    Log.Error($"Theme {themeId} not found");
-                    return false;
-                }
+            var themes = await GetAvailableThemes();
+            var theme = themes.Find(t => t.Id == themeId);
+            if (theme == null) return false;
 
-                var themeDir = Path.Combine(_themesDirectory, themeId);
-                Directory.CreateDirectory(themeDir);
+            var themeDir = Path.Combine(_themesDirectory, themeId);
+            if (Directory.Exists(themeDir))
+                Directory.Delete(themeDir, true);
+            Directory.CreateDirectory(themeDir);
 
-                //// Download the theme package
-                //var zipPath = Path.Combine(Path.GetTempPath(), $"{themeId}.zip");
-                //using (var response = await _httpClient.GetAsync(theme.DownloadUrl))
-                //{
-                //    using (var fs = new FileStream(zipPath, FileMode.Create))
-                //    {
-                //        await response.Content.CopyToAsync(fs);
-                //    }
-                //}
+            var manifestUrl = $"{ThemesApiUrl}/download/{themeId}/manifest.json";
+            var scriptUrl = $"{ThemesApiUrl}/download/{themeId}/main.js";
 
-                //// Extract the package
-                //System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, themeDir, true);
-                //File.Delete(zipPath);
+            using (var ms = await _httpClient.GetStreamAsync(manifestUrl))
+            using (var fs = new FileStream(Path.Combine(themeDir, "manifest.json"), FileMode.Create))
+                await ms.CopyToAsync(fs);
 
-                Log.Success($"Theme {theme.Name} installed successfully");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error installing theme: {ex.Message}");
-                return false;
-            }
+            using (var ss = await _httpClient.GetStreamAsync(scriptUrl))
+            using (var fs = new FileStream(Path.Combine(themeDir, $"main.js"), FileMode.Create))
+                await ss.CopyToAsync(fs);
+
+            return true;
         }
 
         public bool UninstallPlugin(string pluginId)
         {
-            try
-            {
-                var pluginDir = Path.Combine(_pluginsDirectory, pluginId);
-                if (Directory.Exists(pluginDir))
-                {
-                    Directory.Delete(pluginDir, true);
-                    Log.Success($"Plugin {pluginId} uninstalled successfully");
-                    return true;
-                }
-                else
-                {
-                    Log.Warning($"Plugin {pluginId} not found");
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error uninstalling plugin: {ex.Message}");
-                return false;
-            }
+            var dir = Path.Combine(_pluginsDirectory, pluginId);
+            if (!Directory.Exists(dir)) return false;
+            Directory.Delete(dir, true);
+            return true;
         }
 
         public bool UninstallTheme(string themeId)
         {
-            try
-            {
-                var themeDir = Path.Combine(_themesDirectory, themeId);
-                if (Directory.Exists(themeDir))
-                {
-                    Directory.Delete(themeDir, true);
-                    Log.Success($"Theme {themeId} uninstalled successfully");
-                    return true;
-                }
-                else
-                {
-                    Log.Warning($"Theme {themeId} not found");
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error uninstalling theme: {ex.Message}");
-                return false;
-            }
+            var dir = Path.Combine(_themesDirectory, themeId);
+            if (!Directory.Exists(dir)) return false;
+            Directory.Delete(dir, true);
+            return true;
         }
 
         public bool DeactivatePlugin(string pluginId)
         {
-            try
-            {
-                var pluginDir = Path.Combine(_pluginsDirectory, pluginId);
-                if (Directory.Exists(pluginDir))
-                {
-                    _pluginConfig.DeactivatePlugin(pluginId);
-                    Log.Success($"Plugin {pluginId} deactivated successfully");
-                    return true;
-                }
-                else
-                {
-                    Log.Warning($"Plugin {pluginId} not found");
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error deactivating plugin: {ex.Message}");
-                return false;
-            }
+            var dir = Path.Combine(_pluginsDirectory, pluginId);
+            if (!Directory.Exists(dir)) return false;
+            _pluginConfig.DeactivatePlugin(pluginId);
+            return true;
         }
 
         public bool ActivatePlugin(string pluginId)
         {
-            try
-            {
-                var pluginDir = Path.Combine(_pluginsDirectory, pluginId);
-                if (Directory.Exists(pluginDir))
-                {
-                    _pluginConfig.ActivatePlugin(pluginId);
-                    Log.Success($"Plugin {pluginId} activated successfully");
-                    return true;
-                }
-                else
-                {
-                    Log.Warning($"Plugin {pluginId} not found");
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error activating plugin: {ex.Message}");
-                return false;
-            }
+            var dir = Path.Combine(_pluginsDirectory, pluginId);
+            if (!Directory.Exists(dir)) return false;
+            _pluginConfig.ActivatePlugin(pluginId);
+            return true;
         }
 
         public List<AddonInfo> GetActivePlugins()
         {
-            var plugins = GetInstalledPlugins();
-            return plugins.FindAll(p => p.IsActive);
+            return GetInstalledPlugins().FindAll(p => p.IsActive);
         }
+
     }
-} 
+}
