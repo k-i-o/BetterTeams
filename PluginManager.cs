@@ -5,8 +5,10 @@ namespace BetterTeams
 {
     public class PluginManager
     {
-        private const string PluginsApiUrl = "https://localhost:7170/api/betterteams/plugins";
-        private const string ThemesApiUrl = "https://localhost:7170/api/betterteams/themes";
+        private const string PluginsApiUrl = "https://api.kiocode.com/api/betterteams/plugins";
+        private const string ThemesApiUrl = "https://api.kiocode.com/api/betterteams/themes";
+        //private const string PluginsApiUrl = "https://localhost:7170/api/betterteams/plugins";
+        //private const string ThemesApiUrl = "https://localhost:7170/api/betterteams/themes";
         private static HttpClient _httpClient = new();
         private readonly string _pluginsDirectory;
         private readonly string _themesDirectory;
